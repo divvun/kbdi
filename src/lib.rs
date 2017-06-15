@@ -4,7 +4,7 @@ extern crate user32;
 extern crate kernel32;
 extern crate winreg;
 
-use winapi::{HKEY, HKL};
+use winapi::{HKEY, HKL, LPWSTR, DWORD, LPARAM, WCHAR};
 use winreg::{RegKey, RegValue};
 use winreg::enums::*;
 use winreg::types::{ToRegValue};
@@ -75,7 +75,7 @@ fn first_available_keyboard_regkey_id(lcid: &str) -> String {
     if let Some(last) = kbd_keys.last() {
         format!("{:04x}{}", last + 1, lcid)
     } else {
-        format!("a001{}", lcid)
+        format!("a000{}", lcid)
     }
 }
 
@@ -92,7 +92,7 @@ fn first_available_layout_id() -> String {
 
     layout_ids.sort();
     
-    format!("{:04x}", layout_ids.last().unwrap())
+    format!("{:04x}", layout_ids.last().unwrap() + 1)
 }
 
 fn find_layout_by_product_code(product_code: &str) -> Option<String> {
@@ -114,7 +114,7 @@ fn find_layout_by_product_code(product_code: &str) -> Option<String> {
 }
 
 fn create_keyboard_layout_regkey(
-    lcid: &str,
+    language_code: &str,
     language_name: &str,
     product_code: &str,
     layout_file: &str,
@@ -124,7 +124,9 @@ fn create_keyboard_layout_regkey(
         keyboard_layouts_regkey().delete_subkey_all(kl).unwrap();
     }
 
-    let key_name = first_available_keyboard_regkey_id(lcid);
+    let lcid = format!("{:04x}", locale_name_to_lcid(&language_code).unwrap() as u16);
+
+    let key_name = first_available_keyboard_regkey_id(&lcid);
     let layout_id = first_available_layout_id();
 
     let regkey = keyboard_layouts_regkey()
@@ -169,16 +171,125 @@ fn enable_language(language_code: &str) {
     user_profile.set_raw_value("Languages", &regv).unwrap();
 }
 
-fn add_keyboard_to_language(klid: &str, lcid: &str, language_code: &str) {
+// TODO: use from winapi once supported
+const LOCALE_NAME_MAX_LENGTH: usize = 85;
+
+fn resolve_locale(language_code: &str) -> Result<String, Error> {
+    let mut buffer: Vec<u16> = vec![0; LOCALE_NAME_MAX_LENGTH];
+    let lang_code: Vec<u16> = OsStr::new(language_code).encode_wide().chain(once(0)).collect();
+
+    unsafe {
+        let ret = kernel32::ResolveLocaleName(lang_code.as_ptr(), buffer.as_mut_ptr(), LOCALE_NAME_MAX_LENGTH as i32);
+
+         if ret == 0 {
+            return Err(Error::last_os_error())
+        }
+
+        buffer.truncate((ret - 1) as usize);
+        
+        Ok(String::from_utf16_lossy(&buffer))
+    }
+}
+
+unsafe fn lpwstr_to_string(lpw: LPWSTR) -> String {
+    let mut buf: Vec<WCHAR> = vec![];
+    let mut i = 0isize;
+
+    while *lpw.offset(i) != 0 {
+        buf.push(*lpw.offset(i));
+        i += 1
+    }
+
+    return String::from_utf16_lossy(&buf);
+}
+
+fn system_locales() -> Vec<String> {
+    let mut locales: Vec<String> = vec![];
+
+    unsafe extern "system" fn callback(locale: LPWSTR, flags: DWORD, l_param: LPARAM) -> i32 {
+        //let foo = String::from_utf16_lossy(locale);
+        let s = lpwstr_to_string(locale);
+        println!("{:?}", &s);
+        1
+    }
+
+    unsafe {
+        kernel32::EnumSystemLocalesEx(Some(callback), 0x00000010, 0, null_mut());
+    }
+
+    return locales;
+}
+
+fn lcid_to_locale_name(lcid_str: &str) -> Result<String, Error> {
+    let mut buffer: Vec<u16> = vec![0; LOCALE_NAME_MAX_LENGTH];
+    let lcid = u32::from_str_radix(&lcid_str, 16).unwrap();
+
+    unsafe {
+        let ret = kernel32::LCIDToLocaleName(lcid, buffer.as_mut_ptr(), LOCALE_NAME_MAX_LENGTH as i32, 0);
+
+         if ret == 0 {
+            return Err(Error::last_os_error())
+        }
+
+        buffer.truncate((ret - 1) as usize);
+        
+        Ok(String::from_utf16_lossy(&buffer))
+    }
+}
+
+fn locale_name_to_lcid(locale_name: &str) -> Result<u32, Error> {
+    let loc_name: Vec<u16> = OsStr::new(locale_name).encode_wide().chain(once(0)).collect();
+    unsafe {
+        let ret = kernel32::LocaleNameToLCID(loc_name.as_ptr(), 0);
+
+         if ret == 0 {
+            return Err(Error::last_os_error())
+        }
+        
+        Ok(ret)
+    }
+}
+
+#[test]
+fn ohno() {
+    let lcid = locale_name_to_lcid("sma-Latn-NO").unwrap();
+    println!("{:?} {:04X} {:x}", lcid, lcid, lcid);
+}
+
+fn system_lcids() {
+    unsafe extern "system" fn callback(locale: LPWSTR) -> i32 {
+        //let foo = String::from_utf16_lossy(locale);
+        let s = lpwstr_to_string(locale);
+        let ss = lcid_to_locale_name(&s);
+        println!("{:?}", &ss);
+        1
+    }
+
+    unsafe {
+        kernel32::EnumSystemLocalesW(Some(callback), 0);
+    }
+}
+
+#[test]
+fn resolve_locale_test() {
+    //system_locales();
+    // println!("{:?}", system_locales());
+    // println!("{:?}", resolve_locale("sma"));
+    // println!("{:?}", resolve_locale("sma-NO"));
+    // println!("{:?}", resolve_locale("sma-SE"));
+}
+
+fn add_keyboard_to_language(klid: &str, language_code: &str) {
     let user_profile = user_profile();
     let locale_key = user_profile.create_subkey_with_flags(&language_code, KEY_READ | KEY_WRITE).unwrap();
+    let lcid = locale_name_to_lcid(&language_code).unwrap() as u16;
     
     let dwords = locale_key.enum_values()
             .map(|x| x.unwrap())
             .filter(|x| x.1.vtype == RegType::REG_DWORD)
             .count() as u32;
 
-    let kl_key = format!("{}:{}", lcid, klid).to_string().to_uppercase();
+    let kl_key = format!("{:04X}:{}", lcid, klid).to_string().to_uppercase();
     locale_key.set_value(&kl_key, &(dwords + 1)).unwrap();
 }
 
@@ -201,26 +312,15 @@ fn add_keyboard_to_preload_all(klid: &str) {
 }
 
 pub fn install_keyboard(
-    lcid: &str,
     language_name: &str,
     product_code: &str,
     layout_file: &str,
     layout_name: &str,
     language_code: &str
 ) {
-    let klid = &create_keyboard_layout_regkey(lcid, language_name, product_code, layout_file, layout_name);
+    let klid = &create_keyboard_layout_regkey(language_code, language_name, product_code, layout_file, layout_name);
     enable_language(language_code);
-    add_keyboard_to_language(klid, lcid, language_code);
+    add_keyboard_to_language(klid, language_code);
     add_keyboard_to_preload_all(klid);
     load_keyboard_layout(klid);
-}
-
-pub fn install_keyboard_custom(
-    language_name: &str,
-    product_code: &str,
-    layout_file: &str,
-    layout_name: &str,
-    language_code: &str
-) {
-    install_keyboard("0c00", language_name, product_code, layout_file, layout_name, language_code)
 }

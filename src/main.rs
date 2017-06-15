@@ -12,7 +12,6 @@ fn main() {
         (about: "Configure Windows registry values for keyboards")
         (@subcommand install =>
             (about: "Installs a keyboard layout to the registry")
-            (@arg LCID: -L --lcid +takes_value "Microsoft l12n ID (eg: 00c9)")
             (@arg GUID: -g --guid +takes_value +required "Product code GUID for linking to MSI (eg: {42c3de12-28...})")
             (@arg LANG: -l --language +takes_value +required "Language name in specified language (eg: Norsk)")
             (@arg DLL: -d --dll +takes_value +required "Name of keyboard DLL (eg: kbdfoo01.dll)")
@@ -28,10 +27,6 @@ fn main() {
         let lang_code = matches.value_of("CODE").unwrap();
         let guid = matches.value_of("GUID").unwrap();
 
-        if let Some(lcid) = matches.value_of("LCID") {
-            install_keyboard(lcid, lang_name, guid, layout_dll, layout_name, lang_code);
-        } else {
-            install_keyboard_custom(lang_name, guid, layout_dll, layout_name, lang_code);
-        }
+        install_keyboard(lang_name, guid, layout_dll, layout_name, lang_code);
     }
 }
