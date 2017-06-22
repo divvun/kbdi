@@ -152,11 +152,14 @@ fn user_profile() -> RegKey {
             .unwrap()
 }
 
-fn enable_language(language_code: &str) {
+pub fn enabled_languages() -> String {
     let user_profile = user_profile();
+    user_profile.get_value("Languages").unwrap()
+}
 
-    let lang_string: String = user_profile.get_value::<String, &str>("Languages").unwrap();
-    let mut languages: Vec<&str> = lang_string.split("\n").collect();
+fn enable_language(language_code: &str) {
+    let langs = enabled_languages();
+    let mut languages: Vec<&str> = langs.split("\n").collect();
     
     if languages.contains(&language_code) {
         return
@@ -168,7 +171,7 @@ fn enable_language(language_code: &str) {
     let s = languages.join("\u{0}");
     let mut regv = s.to_reg_value();
     regv.vtype = REG_MULTI_SZ;
-    user_profile.set_raw_value("Languages", &regv).unwrap();
+    user_profile().set_raw_value("Languages", &regv).unwrap();
 }
 
 // TODO: use from winapi once supported
@@ -203,21 +206,21 @@ unsafe fn lpwstr_to_string(lpw: LPWSTR) -> String {
     return String::from_utf16_lossy(&buf);
 }
 
-fn system_locales() -> Vec<String> {
-    let mut locales: Vec<String> = vec![];
-
+pub fn system_locales() -> Vec<String> {
     unsafe extern "system" fn callback(locale: LPWSTR, flags: DWORD, l_param: LPARAM) -> i32 {
-        //let foo = String::from_utf16_lossy(locale);
         let s = lpwstr_to_string(locale);
-        println!("{:?}", &s);
+
+        let vec = l_param as *mut Vec<String>;
+        (*vec).push(s);
         1
     }
 
-    unsafe {
-        kernel32::EnumSystemLocalesEx(Some(callback), 0x00000010, 0, null_mut());
-    }
+    let raw_vec = Box::into_raw(Box::new(vec![]));
 
-    return locales;
+    unsafe {
+        kernel32::EnumSystemLocalesEx(Some(callback), 0, raw_vec as LPARAM, null_mut());
+        *Box::from_raw(raw_vec)
+    }
 }
 
 fn lcid_to_locale_name(lcid_str: &str) -> Result<String, Error> {
