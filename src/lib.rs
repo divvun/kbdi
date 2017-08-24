@@ -4,54 +4,31 @@ extern crate user32;
 extern crate kernel32;
 extern crate winreg;
 
-use winapi::{HKEY, HKL, LPWSTR, DWORD, LPARAM, WCHAR};
-use winreg::{RegKey, RegValue};
+use winapi::{LPWSTR, DWORD, LPARAM, WCHAR};
+use winreg::RegKey;
 use winreg::enums::*;
-use winreg::types::{ToRegValue};
+use winreg::types::{ToRegValue, FromRegValue};
 use std::ptr::null_mut;
 use std::io::Error;
 use std::ffi::OsStr;
 use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
 
-#[derive(Debug, PartialEq, Eq)]
-struct KbdLayoutHandle {
-    _inner: HKL
-}
+// fn get_keyboard_layout_list() -> Result<Vec<HKL>, Error> {
+//     let length = 1024i32;
 
-fn get_keyboard_layout_list() -> Result<Vec<KbdLayoutHandle>, Error> {
-    let length = 1024i32;
+//     unsafe {
+//         let mut handles: Vec<HKL> = vec![null_mut(); length as usize];
+//         let ret = user32::GetKeyboardLayoutList(length, handles.as_mut_ptr());
 
-    unsafe {
-        let mut handles: Vec<HKL> = vec![null_mut(); length as usize];
-        let ret = user32::GetKeyboardLayoutList(length, handles.as_mut_ptr());
+//         if ret == 0 {
+//             return Err(Error::last_os_error())
+//         }
 
-        if ret == 0 {
-            return Err(Error::last_os_error())
-        }
-
-        handles.truncate(ret as usize);
-        Ok(handles.into_iter().map(|x| KbdLayoutHandle { _inner: x }).collect())
-    }
-}
-
-fn load_keyboard_layout(klid: &str) -> Result<KbdLayoutHandle, Error> {
-    let klid_win: Vec<u16> = OsStr::new(klid).encode_wide().chain(once(0)).collect();
-
-    unsafe {
-        let ret: HKL = user32::LoadKeyboardLayoutW(klid_win.as_ptr(), winapi::KLF_NOTELLSHELL);
-
-        if ret.is_null() {
-            return Err(Error::last_os_error())
-        }
-
-        Ok(KbdLayoutHandle { _inner: ret })
-    }
-}
-
-fn default_keyboard() -> KbdLayoutHandle {
-    load_keyboard_layout("").unwrap()
-}
+//         handles.truncate(ret as usize);
+//         Ok(handles.into_iter().collect())
+//     }
+// }
 
 fn keyboard_layouts_regkey() -> RegKey {
     RegKey::predef(HKEY_LOCAL_MACHINE)
@@ -95,57 +72,6 @@ fn first_available_layout_id() -> String {
     format!("{:04x}", layout_ids.last().unwrap() + 1)
 }
 
-fn find_layout_by_product_code(product_code: &str) -> Option<String> {
-    let regkey = keyboard_layouts_regkey();
-    let keys: Vec<String> = regkey.enum_keys().map(|x| x.unwrap()).collect();
-
-    for key in keys.into_iter() {
-        let kl_key = regkey.open_subkey_with_flags(&key, KEY_READ).unwrap();
-        let ret: Result<String, Error> = kl_key.get_value("Layout Product Code");
-
-        if let Ok(v) = ret {
-            if v == product_code {
-                return Some(key)
-            }
-        }
-    }
-
-    None
-}
-
-fn create_keyboard_layout_regkey(
-    language_code: &str,
-    language_name: &str,
-    product_code: &str,
-    layout_file: &str,
-    layout_name: &str
-) -> String {
-    if let Some(kl) = find_layout_by_product_code(product_code) {
-        keyboard_layouts_regkey().delete_subkey_all(kl).unwrap();
-    }
-
-    let lcid = format!("{:04x}", locale_name_to_lcid(&language_code).unwrap() as u16);
-
-    let key_name = first_available_keyboard_regkey_id(&lcid);
-    let layout_id = first_available_layout_id();
-
-    let regkey = keyboard_layouts_regkey()
-            .create_subkey_with_flags(&key_name, KEY_READ | KEY_WRITE)
-            .unwrap();
-
-    regkey.set_value("Custom Language Display Name",
-        &format!("@%SystemRoot%\\system32\\{},-1100", &layout_file).to_string()).unwrap();
-    regkey.set_value("Custom Language Name", &language_name).unwrap();
-    regkey.set_value("Layout Display Name", 
-        &format!("@%SystemRoot%\\system32\\{},-1000", &layout_file).to_string()).unwrap();
-    regkey.set_value("Layout File", &layout_file).unwrap();
-    regkey.set_value("Layout Id", &layout_id).unwrap();
-    regkey.set_value("Layout Product Code", &product_code).unwrap();
-    regkey.set_value("Layout Text", &layout_name).unwrap();
-
-    key_name
-}
-
 fn user_profile() -> RegKey {
     RegKey::predef(HKEY_CURRENT_USER)
             .open_subkey_with_flags("Control Panel\\International\\User Profile", KEY_READ | KEY_WRITE)
@@ -157,7 +83,7 @@ pub fn enabled_languages() -> String {
     user_profile.get_value("Languages").unwrap()
 }
 
-fn enable_language(language_code: &str) {
+pub fn enable_language(language_code: &str) {
     let langs = enabled_languages();
     let mut languages: Vec<&str> = langs.split("\n").collect();
     
@@ -174,26 +100,6 @@ fn enable_language(language_code: &str) {
     user_profile().set_raw_value("Languages", &regv).unwrap();
 }
 
-// TODO: use from winapi once supported
-const LOCALE_NAME_MAX_LENGTH: usize = 85;
-
-fn resolve_locale(language_code: &str) -> Result<String, Error> {
-    let mut buffer: Vec<u16> = vec![0; LOCALE_NAME_MAX_LENGTH];
-    let lang_code: Vec<u16> = OsStr::new(language_code).encode_wide().chain(once(0)).collect();
-
-    unsafe {
-        let ret = kernel32::ResolveLocaleName(lang_code.as_ptr(), buffer.as_mut_ptr(), LOCALE_NAME_MAX_LENGTH as i32);
-
-         if ret == 0 {
-            return Err(Error::last_os_error())
-        }
-
-        buffer.truncate((ret - 1) as usize);
-        
-        Ok(String::from_utf16_lossy(&buffer))
-    }
-}
-
 unsafe fn lpwstr_to_string(lpw: LPWSTR) -> String {
     let mut buf: Vec<WCHAR> = vec![];
     let mut i = 0isize;
@@ -207,7 +113,7 @@ unsafe fn lpwstr_to_string(lpw: LPWSTR) -> String {
 }
 
 pub fn system_locales() -> Vec<String> {
-    unsafe extern "system" fn callback(locale: LPWSTR, flags: DWORD, l_param: LPARAM) -> i32 {
+    unsafe extern "system" fn callback(locale: LPWSTR, _: DWORD, l_param: LPARAM) -> i32 {
         let s = lpwstr_to_string(locale);
 
         let vec = l_param as *mut Vec<String>;
@@ -223,95 +129,286 @@ pub fn system_locales() -> Vec<String> {
     }
 }
 
-fn lcid_to_locale_name(lcid_str: &str) -> Result<String, Error> {
-    let mut buffer: Vec<u16> = vec![0; LOCALE_NAME_MAX_LENGTH];
-    let lcid = u32::from_str_radix(&lcid_str, 16).unwrap();
-
-    unsafe {
-        let ret = kernel32::LCIDToLocaleName(lcid, buffer.as_mut_ptr(), LOCALE_NAME_MAX_LENGTH as i32, 0);
-
-         if ret == 0 {
-            return Err(Error::last_os_error())
-        }
-
-        buffer.truncate((ret - 1) as usize);
-        
-        Ok(String::from_utf16_lossy(&buffer))
-    }
-}
-
 fn locale_name_to_lcid(locale_name: &str) -> Result<u32, Error> {
-    let loc_name: Vec<u16> = OsStr::new(locale_name).encode_wide().chain(once(0)).collect();
+    let loc_name: Vec<u16> = OsStr::new(locale_name)
+        .encode_wide()
+        .chain(once(0))
+        .collect();
+    
     unsafe {
         let ret = kernel32::LocaleNameToLCID(loc_name.as_ptr(), 0);
 
-         if ret == 0 {
-            return Err(Error::last_os_error())
+        match ret {
+            0 => Err(Error::last_os_error()),
+            _ => Ok(ret)
         }
+    }
+}
+
+pub struct LanguageRegKey {
+    id: String,
+    regkey: RegKey
+}
+
+#[allow(dead_code)]
+pub struct KeyboardRegKey {
+    id: String,
+    regkey: RegKey
+}
+
+impl KeyboardRegKey {
+    // fn find_by_product_code(product_code: &str) -> Option<KeyboardRegKey> {
+    //     let regkey = keyboard_layouts_regkey();
+    //     let keys: Vec<String> = regkey.enum_keys().map(|x| x.unwrap()).collect();
+
+    //     for key in keys.into_iter() {
+    //         let kl_key = regkey.open_subkey_with_flags(&key, KEY_READ | KEY_WRITE).unwrap();
+    //         let ret: Result<String, Error> = kl_key.get_value("Layout Product Code");
+
+    //         if let Ok(v) = ret {
+    //             if v == product_code {
+    //                 return Some(KeyboardRegKey { id: key.clone(), regkey: kl_key })
+    //             }
+    //         }
+    //     }
+
+    //     None
+    // }
+
+    // fn remove_by_product_code(product_code: &str) {
+    //     if let Some(kl) = KeyboardRegKey::find_by_product_code(product_code) {
+    //         keyboard_layouts_regkey().delete_subkey_all(kl.name()).unwrap();
+    //     }
+    // }
+
+    fn name(&self) -> &str {
+        &self.id
+    }
+
+    fn create(
+        language_code: &str,
+        language_name: &str,
+        product_code: &str,
+        layout_file: &str,
+        layout_name: &str
+    ) -> KeyboardRegKey {
+        let lcid = format!("{:04x}", locale_name_to_lcid(&language_code).unwrap() as u16);
+
+        let key_name = first_available_keyboard_regkey_id(&lcid);
+        let layout_id = first_available_layout_id();
+
+        let regkey = keyboard_layouts_regkey()
+                .create_subkey_with_flags(&key_name, KEY_READ | KEY_WRITE)
+                .unwrap();
+
+        regkey.set_value("Custom Language Display Name",
+            &format!("@%SystemRoot%\\system32\\{},-1100", &layout_file).to_string()).unwrap();
+        regkey.set_value("Custom Language Name", &language_name).unwrap();
+        regkey.set_value("Layout Display Name", 
+            &format!("@%SystemRoot%\\system32\\{},-1000", &layout_file).to_string()).unwrap();
+        regkey.set_value("Layout File", &layout_file).unwrap();
+        regkey.set_value("Layout Id", &layout_id).unwrap();
+        regkey.set_value("Layout Product Code", &product_code).unwrap();
+        regkey.set_value("Layout Text", &layout_name).unwrap();
+
+        KeyboardRegKey { id: key_name.clone(), regkey: regkey }
+    }
+}
+
+impl LanguageRegKey {
+    fn next_transient_lang_id() -> u32 {
+        let regkey = user_profile();
+
+        regkey.enum_keys()
+            .map(|x| regkey.open_subkey(x.unwrap()))
+            .fold(0x2000u32, |acc, x| {
+                if let Ok(lang_id) = x.unwrap().get_value::<u32, _>("TransientLangId") {
+                    if lang_id >= acc {
+                        lang_id + 0x400
+                    } else {
+                        acc
+                    }
+                } else {
+                    acc
+                }
+            })
+    }
+
+    fn next_layout_order(&self) -> u32 {
+        self.regkey.enum_values()
+            .fold(1u32, |acc, x| {
+                let (k, v) = x.unwrap();
+
+                if k.contains(":") {
+                    if let Ok(vv) = u32::from_reg_value(&v) {
+                        if vv >= acc {
+                            return acc + 1;
+                        }
+                    }
+                }
+
+                acc
+            })
+    }
+
+    fn set_language_name(&mut self, name: &str) {
+        self.regkey.set_value("CachedLanguageName", &name).unwrap();
+    }
+
+    // fn language_name(&self) -> Option<String> {
+    //     if let Ok(value) = self.regkey.get_value("CachedLanguageName") {
+    //         Some(value)
+    //     } else {
+    //         None
+    //     }
+    // }
+
+    fn set_transient_lang_id(&mut self, id: u32) {
+        self.regkey.set_value("TransientLangId", &id).unwrap();
+    }
+
+    fn transient_lang_id(&self) -> Option<u32> {
+        if let Ok(value) = self.regkey.get_value("TransientLangId") {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    fn add_keyboard(&mut self, keyboard: KeyboardRegKey) {
+        let lcid = if let Some(v) = self.transient_lang_id() {
+            v
+        } else {
+            locale_name_to_lcid(self.id.split(r"\").last().unwrap()).unwrap()
+        } as u16;
+        let kbd_id = keyboard.name();
+
+        // Add keyboard id to reg
+        self.regkey.set_value(format!("{:04X}:{}", &lcid, &kbd_id.to_uppercase()), &self.next_layout_order()).unwrap();
+
+        // Get sub id
+        let sub_id = format!("{:08x}", next_substitute_id(lcid));
         
-        Ok(ret)
+        // Create substitute entry
+        kbd_layout_sub_regkey().set_value(&sub_id, &kbd_id).unwrap();
+
+        // Create preload entry
+        kbd_layout_preload_regkey().set_value(format!("{}", next_preload_id()), &sub_id).unwrap();
     }
+
+    pub fn create(alpha_3_code: &str, native_name: &str) -> LanguageRegKey {
+        if let Some(lang_regkey) = LanguageRegKey::find_by_alpha_3_code(&alpha_3_code) {
+            return lang_regkey;
+        }
+
+        let mut regkey = LanguageRegKey {
+            id: alpha_3_code.to_owned(),
+            regkey: RegKey::predef(HKEY_CURRENT_USER)
+                .create_subkey_with_flags(format!(r"Control Panel\International\User Profile\{}", &alpha_3_code), KEY_READ | KEY_WRITE)
+                .unwrap()
+        };
+
+        if !system_locales().contains(&alpha_3_code.to_owned()) {
+            regkey.set_language_name(native_name);
+            regkey.set_transient_lang_id(LanguageRegKey::next_transient_lang_id());
+        }
+
+        regkey
+    }
+
+    fn find_by_alpha_3_code(alpha_3_code: &str) -> Option<LanguageRegKey> {
+        let maybe_regkey = RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey_with_flags(format!(r"Control Panel\International\User Profile\{}", &alpha_3_code), KEY_READ | KEY_WRITE);
+
+        if let Ok(regkey) = maybe_regkey {
+            Some(LanguageRegKey { id: alpha_3_code.to_owned(), regkey: regkey })
+        } else {
+            None
+        }
+    }
+
+}
+
+fn kbd_layout_sub_regkey() -> RegKey {
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(r"Keyboard Layout\Substitutes", KEY_READ | KEY_WRITE)
+        .unwrap()
+}
+
+fn kbd_layout_preload_regkey() -> RegKey {
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(r"Keyboard Layout\Preload", KEY_READ | KEY_WRITE)
+        .unwrap()
+}
+
+/// Substitute IDs begin with 0000, then increment to d001, and continue incrementing dXXX.
+fn next_substitute_id(suffix: u16) -> u32 {
+    let prefix: u16 = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(r"Keyboard Layout\Substitutes", KEY_READ)
+        .unwrap()
+        .enum_values()
+        .fold(0u16, |acc, x| {
+            let (k, _) = x.unwrap();
+
+            if let Ok(kk) = u32::from_str_radix(&k, 16) {
+                if (kk as u16) == suffix {
+                    // Move high bits down
+                    let v = (kk >> 16) as u16;
+
+                    if v >= acc {
+                        return if v == 0 {
+                            0xd001
+                        } else {
+                            v + 1
+                        }
+                    }
+                }
+
+                acc
+            } else {
+                acc
+            }
+        });
+
+    ((prefix as u32) << 16) + (suffix as u32)
+}
+
+fn next_preload_id() -> u32 {
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(r"Keyboard Layout\Preload", KEY_READ)
+        .unwrap()
+        .enum_values()
+        .fold(1u32, |acc, x| {
+            let (k, _) = x.unwrap();
+
+            if let Ok(v) = u32::from_str_radix(&k, 10) {
+                if v >= acc {
+                    v + 1
+                } else {
+                    acc
+                }
+            } else {
+                acc
+            }
+        })
 }
 
 #[test]
-fn ohno() {
-    let lcid = locale_name_to_lcid("sma-Latn-NO").unwrap();
-    println!("{:?} {:04X} {:x}", lcid, lcid, lcid);
-}
-
-fn system_lcids() {
-    unsafe extern "system" fn callback(locale: LPWSTR) -> i32 {
-        //let foo = String::from_utf16_lossy(locale);
-        let s = lpwstr_to_string(locale);
-        let ss = lcid_to_locale_name(&s);
-        println!("{:?}", &ss);
-        1
-    }
-
-    unsafe {
-        kernel32::EnumSystemLocalesW(Some(callback), 0);
-    }
+fn test_sub_id() {
+    println!("sub_id: {:08x}", next_substitute_id(0xabcd));
+    println!("sub_id: {:08x}", next_substitute_id(0x0c09));
 }
 
 #[test]
-fn resolve_locale_test() {
-    //system_locales();
-    // println!("{:?}", system_locales());
-    // println!("{:?}", resolve_locale("sma"));
-    // println!("{:?}", resolve_locale("sma-NO"));
-    // println!("{:?}", resolve_locale("sma-SE"));
+fn test_next_preload_id() {
+    println!("preload_id: {}", next_preload_id());
 }
 
-fn add_keyboard_to_language(klid: &str, language_code: &str) {
-    let user_profile = user_profile();
-    let locale_key = user_profile.create_subkey_with_flags(&language_code, KEY_READ | KEY_WRITE).unwrap();
-    let lcid = locale_name_to_lcid(&language_code).unwrap() as u16;
-    
-    let dwords = locale_key.enum_values()
-            .map(|x| x.unwrap())
-            .filter(|x| x.1.vtype == RegType::REG_DWORD)
-            .count() as u32;
+#[test]
+fn test_it_doth_work() {
+    let v = LanguageRegKey::next_transient_lang_id();
 
-    let kl_key = format!("{:04X}:{}", lcid, klid).to_string().to_uppercase();
-    locale_key.set_value(&kl_key, &(dwords + 1)).unwrap();
-}
-
-fn add_keyboard_to_preload(klid: &str, hkey: HKEY, path: &str) {
-    let preload = RegKey::predef(hkey)
-            .open_subkey_with_flags(&path, KEY_READ | KEY_WRITE)
-            .unwrap();
-    
-    let count = preload.enum_values()
-            .map(|x| x.unwrap())
-            .count();
-    
-    preload.set_value(format!("{}", count + 1), &klid).unwrap();
-}
-
-fn add_keyboard_to_preload_all(klid: &str) {
-    add_keyboard_to_preload(&klid, HKEY_CURRENT_USER, "Keyboard Layout\\Preload");
-    add_keyboard_to_preload(&klid, HKEY_USERS, ".DEFAULT\\Keyboard Layout\\Preload");
-    add_keyboard_to_preload(&klid, HKEY_LOCAL_MACHINE, "SYSTEM\\Keyboard Layout\\Preload");
+    println!("Transient id: {:04x}", v);
 }
 
 pub fn install_keyboard(
@@ -321,9 +418,9 @@ pub fn install_keyboard(
     layout_name: &str,
     language_code: &str
 ) {
-    let klid = &create_keyboard_layout_regkey(language_code, language_name, product_code, layout_file, layout_name);
+    let mut lang = LanguageRegKey::create(language_code, language_name);
     enable_language(language_code);
-    add_keyboard_to_language(klid, language_code);
-    add_keyboard_to_preload_all(klid);
-    load_keyboard_layout(klid);
+
+    let kbd = KeyboardRegKey::create(language_code, language_name, product_code, layout_file, layout_name);
+    lang.add_keyboard(kbd);
 }

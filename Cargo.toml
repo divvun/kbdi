@@ -1,6 +1,6 @@
 [package]
 name = "kbdi"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 publish = false
 
@@ -16,6 +16,9 @@ default-features = false
 features = []
 
 [dependencies.clap]
-version = "~2.19.0"
+version = "2.24.1"
 default-features = false
 features = []
+
+[profile.release]
+lto = true
