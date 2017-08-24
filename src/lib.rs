@@ -290,10 +290,12 @@ impl LanguageRegKey {
         let sub_id = format!("{:08x}", next_substitute_id(lcid));
         
         // Create substitute entry
-        kbd_layout_sub_regkey().set_value(&sub_id, &kbd_id).unwrap();
+        kbd_layout_sub_regkey(true).set_value(&sub_id, &kbd_id).unwrap();
+        kbd_layout_sub_regkey(false).set_value(&sub_id, &kbd_id).unwrap();
 
         // Create preload entry
-        kbd_layout_preload_regkey().set_value(format!("{}", next_preload_id()), &sub_id).unwrap();
+        kbd_layout_preload_regkey(true).set_value(format!("{}", next_preload_id(true)), &sub_id).unwrap();
+        kbd_layout_preload_regkey(false).set_value(format!("{}", next_preload_id(false)), &sub_id).unwrap();
     }
 
     pub fn create(alpha_3_code: &str, native_name: &str) -> LanguageRegKey {
@@ -329,14 +331,25 @@ impl LanguageRegKey {
 
 }
 
-fn kbd_layout_sub_regkey() -> RegKey {
-    RegKey::predef(HKEY_CURRENT_USER)
+fn base_regkey(is_all_users: bool) -> RegKey {
+    match is_all_users {
+        true => {
+            RegKey::predef(HKEY_USERS)
+                .open_subkey_with_flags(r".DEFAULT", KEY_READ | KEY_WRITE)
+                .unwrap()
+        },
+        false => RegKey::predef(HKEY_CURRENT_USER)
+    }
+}
+
+fn kbd_layout_sub_regkey(is_all_users: bool) -> RegKey {
+    base_regkey(is_all_users)
         .open_subkey_with_flags(r"Keyboard Layout\Substitutes", KEY_READ | KEY_WRITE)
         .unwrap()
 }
 
-fn kbd_layout_preload_regkey() -> RegKey {
-    RegKey::predef(HKEY_CURRENT_USER)
+fn kbd_layout_preload_regkey(is_all_users: bool) -> RegKey {
+    base_regkey(is_all_users)
         .open_subkey_with_flags(r"Keyboard Layout\Preload", KEY_READ | KEY_WRITE)
         .unwrap()
 }
@@ -373,8 +386,8 @@ fn next_substitute_id(suffix: u16) -> u32 {
     ((prefix as u32) << 16) + (suffix as u32)
 }
 
-fn next_preload_id() -> u32 {
-    RegKey::predef(HKEY_CURRENT_USER)
+fn next_preload_id(is_all_users: bool) -> u32 {
+    base_regkey(is_all_users)
         .open_subkey_with_flags(r"Keyboard Layout\Preload", KEY_READ)
         .unwrap()
         .enum_values()

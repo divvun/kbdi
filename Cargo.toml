@@ -22,3 +22,4 @@ features = []
 
 [profile.release]
 lto = true
+panic = "abort"
