@@ -1,11 +1,9 @@
-use std::ptr::{null, null_mut};
 use std::ffi::{OsString, OsStr};
-use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::slice;
-use std::iter::once;
 use std::io;
 use std::ops::{Deref, DerefMut};
-// use winapi::ctypes::c_char;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::ptr::{null, null_mut};
+use std::slice;
 use winapi::winrt::hstring::HSTRING;
 use winapi::winrt::winstring::*;
 
@@ -108,23 +106,9 @@ impl From<String> for HString {
 }
 
 #[test]
-fn test_froms() {
+fn test_hstring_from() {
     let t = "This is a test.";
     let h = HString::from(t);
     let s = String::from(h);
     assert_eq!(t, s);
-}
-
-pub fn to_wide_string(input: &str) -> Vec<u16> {
-    OsStr::new(input)
-        .encode_wide()
-        .chain(once(0))
-        .collect()
-}
-
-pub fn from_wide_string(vec: &[u16]) -> Result<String, OsString> {
-    let s = OsString::from_wide(&vec)
-        .into_string()?;
-    
-    Ok(s.split('\0').next().unwrap().to_owned())
 }

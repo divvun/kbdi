@@ -3,6 +3,7 @@ extern crate clap;
 extern crate kbdi;
 
 use kbdi::*;
+use kbdi::platform::*;
 
 fn main() {
     let matches = clap_app!(kbdi =>
@@ -29,21 +30,18 @@ fn main() {
         (@subcommand list_languages => 
             (about: "Lists all languages enabled for the current user")
         )
-        (@subcommand list_locales =>
-            (about: "Lists all supported locales of the operating system")
-        )
     ).get_matches();
 
     match matches.subcommand() {
         ("install", Some(matches)) => {
-            let lang_name = matches.value_of("LANG").unwrap();
-            let layout_dll = matches.value_of("DLL").unwrap();
-            let layout_name = matches.value_of("LAYOUT").unwrap_or(&lang_name);
-            let lang_code = matches.value_of("CODE").unwrap();
-            let guid = matches.value_of("GUID").unwrap();
+            // let lang_name = matches.value_of("LANG").unwrap();
+            // let layout_dll = matches.value_of("DLL").unwrap();
+            // let layout_name = matches.value_of("LAYOUT").unwrap_or(&lang_name);
+            // let lang_code = matches.value_of("CODE").unwrap();
+            // let guid = matches.value_of("GUID").unwrap();
 
-            install_keyboard(lang_name, guid, layout_dll, layout_name, lang_code);
-            println!("Rebooting is required to complete installation.");
+            // install_keyboard(lang_name, guid, layout_dll, layout_name, lang_code);
+            // println!("Rebooting is required to complete installation.");
         },
         ("enable_language", Some(matches)) => {
             let tag = matches.value_of("TAG").unwrap();
@@ -51,24 +49,15 @@ fn main() {
         },
         ("query_language", Some(matches)) => {
             let tag = matches.value_of("TAG").unwrap();
-            println!("{}", query_language(&tag));
-            if let Some(lcid) = bcp47langs::lcid_from_bcp47(&tag) {
-                println!("LCID: 0x{:8x}", lcid);
-            }
+            match bcp47langs::lcid_from_bcp47(&tag) {
+                Some(lcid) => println!("LCID: 0x{:8x}", lcid),
+                None => println!("LCID: undefined")
+            };
         },
         ("list_languages", _) => {
             let languages = enabled_languages().unwrap().join(" ");
-
             println!("{}", &languages);
-        },
-        ("list_locales", _) => {
-            let mut locales = system_locales();
-
-            locales.sort();
-            for locale in locales {
-                println!("{}", locale);
-            }
-        },
+        }
         _ => {}
     }
 }
