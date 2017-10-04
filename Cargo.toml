@@ -4,11 +4,10 @@ version = "0.2.0"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 publish = false
 
-[dependencies]
-winapi = "0.2"
-user32-sys = "0.2"
-advapi32-sys = "0.2"
-kernel32-sys = "0.2"
+[dependencies.winapi]
+git = "https://github.com/bbqsrc/winapi-rs"
+branch = "move-kernel32-nls-funcs"
+features = ["everything"]
 
 [dependencies.winreg]
 version = "0.4"

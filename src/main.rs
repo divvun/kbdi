@@ -19,9 +19,12 @@ fn main() {
             (@arg CODE: -i --("language-code") +takes_value +required "Language code in BCP 47 style (eg: sma-Latn-NO)")
         )
         (@subcommand enable_language =>
-            (about: "Enable a language with provided native name and code")
-            (@arg LANG: -l --language +takes_value +required "Native language name (eg: Norsk)")
-            (@arg CODE: -i --("language-code") +takes_value +required "Language code in BCP 47 style (eg: sma-Latn-NO)")
+            (about: "Enable a language with provided tag")
+            (@arg TAG: -t --tag +takes_value +required "Language tag in BCP 47 format (eg: sma-Latn-NO)")
+        )
+        (@subcommand query_language =>
+            (about: "Get data about language tag")
+            (@arg TAG: -t --tag +takes_value +required "Language tag in BCP 47 format (eg: sma-Latn-NO)")
         )
         (@subcommand list_languages => 
             (about: "Lists all languages enabled for the current user")
@@ -43,18 +46,20 @@ fn main() {
             println!("Rebooting is required to complete installation.");
         },
         ("enable_language", Some(matches)) => {
-            let lang_name = matches.value_of("LANG").unwrap();
-            let lang_code = matches.value_of("CODE").unwrap();
-
-            LanguageRegKey::create(lang_code, lang_name);
-            enable_language(lang_code);
+            let tag = matches.value_of("TAG").unwrap();
+            enable_language(tag);
+        },
+        ("query_language", Some(matches)) => {
+            let tag = matches.value_of("TAG").unwrap();
+            println!("{}", query_language(&tag));
+            if let Some(lcid) = bcp47langs::lcid_from_bcp47(&tag) {
+                println!("LCID: 0x{:8x}", lcid);
+            }
         },
         ("list_languages", _) => {
-            let languages = enabled_languages();
-            let a: Vec<&str> = languages.split("\n").collect();
-            let out: String = a.join(" ");
+            let languages = enabled_languages().unwrap().join(" ");
 
-            println!("{}", &out);
+            println!("{}", &languages);
         },
         ("list_locales", _) => {
             let mut locales = system_locales();

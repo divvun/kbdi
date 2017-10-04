@@ -1,18 +1,272 @@
 extern crate winapi;
-extern crate advapi32;
-extern crate user32;
-extern crate kernel32;
 extern crate winreg;
 
-use winapi::{LPWSTR, DWORD, LPARAM, WCHAR};
+use winapi::shared::minwindef::{DWORD, LPARAM};
+use winapi::shared::ntdef::*;
 use winreg::RegKey;
 use winreg::enums::*;
 use winreg::types::{ToRegValue, FromRegValue};
 use std::ptr::null_mut;
-use std::io::Error;
-use std::ffi::OsStr;
-use std::iter::once;
-use std::os::windows::ffi::OsStrExt;
+use std::io;
+use std::ffi::{OsStr, OsString};
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+mod sys;
+mod winrust;
+
+use winrust::*;
+
+fn set_user_languages(tags: &[String]) -> Result<(), String> {
+    let valid_tags: Vec<String> =
+        tags.iter()
+        .flat_map(|t| winlangdb::get_language_names(t))
+        .map(|t| t.tag)
+        .collect();
+
+    println!("{:?}", valid_tags);
+
+    winlangdb::set_user_languages(&valid_tags)
+        .or_else(|_| Err("Failed enabling languages".to_owned()))?;
+    winlangdb::remove_inputs_for_all_languages_internal()
+        .or_else(|_| Err("Remove inputs failed".to_owned()))?;
+
+    let results: Vec<Result<(), String>> = valid_tags.iter().map(|tag| {
+        let lcid = match bcp47langs::lcid_from_bcp47(tag) {
+            Some(v) => v,
+            None => return Err("Failed to enable tag".to_owned())
+        };
+
+        let mut inputs = winlangdb::default_input_method(tag);
+        inputs = winlangdb::transform_input_methods(inputs, tag);
+        println!("{} {}", tag, inputs.0);
+        input::install_layout(inputs).or_else(|_| Err("failed to enable layout".to_owned()))
+    }).collect();
+
+    let errors: Vec<&Result<(), String>> = results.iter().filter(|x| x.is_err()).collect();
+
+    if errors.len() > 0 {
+        return Err("There were some errors while enabling layouts, and were ignored.".to_owned())
+    }
+
+    Ok(())
+}
+
+mod winnls {
+    use ::*;
+
+    pub fn resolve_locale_name(tag: &str) -> Option<String> {
+        let mut buf = vec![0u16; 85];
+
+        let ret = unsafe {
+            winapi::um::winnls::ResolveLocaleName(
+                to_wide_string(tag).as_ptr(),
+                buf.as_mut_ptr(),
+                85
+            )
+        };
+        
+        if ret == 0 {
+            let err = io::Error::last_os_error();
+            println!("{:?}", err);
+            panic!();
+        }
+
+        buf.truncate(ret as usize - 1);
+
+        if buf.len() == 0 {
+            return None;
+        }
+
+        Some(OsString::from_wide(&buf).into_string().unwrap())
+    }
+}
+
+mod winlangdb {
+    use ::*;
+
+    pub fn remove_inputs_for_all_languages_internal() -> Result<(), io::Error> {
+        let ret = unsafe { sys::winlangdb::RemoveInputsForAllLanguagesInternal() };
+
+        if ret < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+
+    pub fn ensure_language_profile_exists() -> Result<(), io::Error> {
+        let ret = unsafe { sys::winlangdb::EnsureLanguageProfileExists() };
+    
+        if ret < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+
+    pub struct LanguageData {
+        pub tag: String,
+        pub name: String,
+        pub english_name: String,
+        pub localised_name: String,
+        pub script_name: String
+    }
+
+    pub fn get_language_names(tag: &str) -> Option<LanguageData> {
+        let mut a = [0u16; 256];
+        let mut b = [0u16; 256];
+        let mut c = [0u16; 256];
+        let mut d = [0u16; 256];
+
+        let ret = unsafe {
+            sys::winlangdb::GetLanguageNames(
+                to_wide_string(tag).as_ptr(),
+                a.as_mut_ptr() as *mut _,
+                b.as_mut_ptr() as *mut _,
+                c.as_mut_ptr() as *mut _,
+                d.as_mut_ptr() as *mut _
+            )
+        };
+
+        if ret < 0 {
+            println!("{:?}", io::Error::last_os_error());
+            return None;
+        }
+
+        fn from_cstr(slice: &[u16]) -> String {
+            from_wide_string(slice).unwrap()
+        }
+        
+        Some(LanguageData {
+            tag: tag.to_owned(),
+            name: from_cstr(&a),
+            english_name: from_cstr(&b),
+            localised_name: from_cstr(&c),
+            script_name: from_cstr(&d)
+        })
+    }
+
+    pub fn set_user_languages(tags: &[String]) -> Result<(), io::Error> {
+        use winapi::ctypes::c_char;
+        
+        let handle = HString::from(tags.join(";"));
+        let ret = unsafe { sys::winlangdb::SetUserLanguages(';' as c_char, *handle) };
+        
+        if ret < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+
+    pub fn transform_input_methods(methods: InputList, tag: &str) -> InputList {
+        let hmethods = HString::from(methods.0);
+        let htag = HString::from(tag);
+        let out = unsafe {
+            let mut out = HString::null();
+            sys::winlangdb::TransformInputMethodsForLanguage(*hmethods, *htag, &mut *out);
+            out
+        };
+        InputList(String::from(out))
+    }
+    
+    pub fn default_input_method(tag: &str) -> InputList {
+        let htag = HString::from(tag);
+        let out = unsafe {
+            let mut out = HString::null();
+            sys::winlangdb::GetDefaultInputMethodForLanguage(*htag, &mut *out);
+            out
+        };
+        InputList(String::from(out))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct InputList(String);
+
+pub mod input {
+    use ::*;
+
+    pub fn install_layout(inputs: InputList) -> Result<(), io::Error> {
+        let winput = to_wide_string(&inputs.0);
+
+        let ret = unsafe { sys::input::InstallLayoutOrTip(winput.as_ptr(), 0) };
+        if ret < 0 {
+            return Err(io::Error::last_os_error())
+        }
+
+        Ok(())
+    }
+}
+
+pub mod bcp47langs {
+    use ::*;
+
+    pub fn get_user_languages() -> Result<Vec<String>, io::Error> {
+        let langs = unsafe {
+            let mut hstring = HString::null();
+            let ret = sys::bcp47langs::GetUserLanguages(';' as i8, &mut *hstring);
+            
+            if ret < 0 {
+                return Err(io::Error::last_os_error());
+            }
+
+            String::from(hstring)
+        };
+        
+        Ok(langs.split(';').map(|x| x.to_owned()).collect())
+    }
+
+    pub fn lcid_from_bcp47(tag: &str) -> Option<u32> {
+        let handle = HString::from(tag);
+        let mut lcid = 31i32;
+
+        unsafe { sys::bcp47langs::LcidFromBcp47(*handle, &mut lcid) };
+
+        if lcid == 0 {
+            None
+        } else {
+            Some(lcid as u32)
+        }
+    }
+}
+
+#[test]
+fn test_lcid_from_bcp47() {
+    assert_eq!(bcp47langs::lcid_from_bcp47("en-AU"), Some(0x0c09), "en-AU");
+    assert_eq!(bcp47langs::lcid_from_bcp47("vro-Latn"), Some(0x2000), "vro-Latn");
+    assert_eq!(bcp47langs::lcid_from_bcp47("sjd-Cyrl"), Some(0x1000), "sjd-Cyrl");
+}
+
+#[test]
+fn test_default_input() {
+    assert_eq!(winlangdb::default_input_method("en-AU"), InputList("0C09:00000409".to_owned()))
+}
+
+#[test]
+fn test_transform_input() {
+    assert_eq!(
+        winlangdb::transform_input_methods(InputList("0C09:00000409".to_owned()), "en-AU"),
+        InputList("0C09:00000409".to_owned())
+    );
+}
+
+pub fn query_language(tag: &str) -> String {
+    let id = winnls::resolve_locale_name(tag)
+        .unwrap_or(tag.to_owned());
+
+    match winlangdb::get_language_names(&id) {
+        None => format!("{}: Unsupported tag.", &id),
+        Some(data) => {
+            format!("\
+Tag: {}
+Name: {}
+English Name: {}
+Native Name: {}
+Script: {}", id, data.name, data.english_name, data.localised_name, data.script_name)
+        }
+    }
+}
 
 // fn get_keyboard_layout_list() -> Result<Vec<HKL>, Error> {
 //     let length = 1024i32;
@@ -43,7 +297,7 @@ fn first_available_keyboard_regkey_id(lcid: &str) -> String {
         .filter(|x| x.starts_with(&"a") && x.ends_with(&lcid))
         .map(|x| {
             let n = u32::from_str_radix(&x, 16).unwrap_or(0u32);
-            (n >> 16) as u16
+             (n >> 16) as u16
         })
         .collect();
     
@@ -78,26 +332,26 @@ fn user_profile() -> RegKey {
             .unwrap()
 }
 
-pub fn enabled_languages() -> String {
-    let user_profile = user_profile();
-    user_profile.get_value("Languages").unwrap()
+pub fn enabled_languages() -> Result<Vec<String>, io::Error> {
+    winlangdb::ensure_language_profile_exists()?;
+    bcp47langs::get_user_languages()
 }
 
-pub fn enable_language(language_code: &str) {
-    let langs = enabled_languages();
-    let mut languages: Vec<&str> = langs.split("\n").collect();
+// TODO: reimplement support for adding native language name, optionally
+pub fn enable_language(tag: &str) -> Result<(), io::Error> {
+    let mut langs = enabled_languages()?;
     
-    if languages.contains(&language_code) {
-        return
+    let lang = tag.to_owned();
+
+    if langs.contains(&lang) {
+        return Ok(());
     }
+    
+    langs.push(lang);
 
-    languages.push(language_code);
-
-    // Argh hack
-    let s = languages.join("\u{0}");
-    let mut regv = s.to_reg_value();
-    regv.vtype = REG_MULTI_SZ;
-    user_profile().set_raw_value("Languages", &regv).unwrap();
+    set_user_languages(&langs).unwrap();
+    Ok(())
+    //    .or_else(|_| Err("Error while setting languages.".to_owned()))
 }
 
 unsafe fn lpwstr_to_string(lpw: LPWSTR) -> String {
@@ -124,22 +378,19 @@ pub fn system_locales() -> Vec<String> {
     let raw_vec = Box::into_raw(Box::new(vec![]));
 
     unsafe {
-        kernel32::EnumSystemLocalesEx(Some(callback), 0, raw_vec as LPARAM, null_mut());
+        winapi::um::winnls::EnumSystemLocalesEx(Some(callback), 0, raw_vec as LPARAM, null_mut());
         *Box::from_raw(raw_vec)
     }
 }
 
-fn locale_name_to_lcid(locale_name: &str) -> Result<u32, Error> {
-    let loc_name: Vec<u16> = OsStr::new(locale_name)
-        .encode_wide()
-        .chain(once(0))
-        .collect();
+fn locale_name_to_lcid(locale_name: &str) -> Result<u32, io::Error> {
+    let loc_name: Vec<u16> = to_wide_string(locale_name);
     
     unsafe {
-        let ret = kernel32::LocaleNameToLCID(loc_name.as_ptr(), 0);
+        let ret = winapi::um::winnls::LocaleNameToLCID(loc_name.as_ptr(), 0);
 
         match ret {
-            0 => Err(Error::last_os_error()),
+            0 => Err(io::Error::last_os_error()),
             _ => Ok(ret)
         }
     }
@@ -160,21 +411,17 @@ impl KeyboardRegKey {
     // fn find_by_product_code(product_code: &str) -> Option<KeyboardRegKey> {
     //     let regkey = keyboard_layouts_regkey();
     //     let keys: Vec<String> = regkey.enum_keys().map(|x| x.unwrap()).collect();
-
     //     for key in keys.into_iter() {
     //         let kl_key = regkey.open_subkey_with_flags(&key, KEY_READ | KEY_WRITE).unwrap();
     //         let ret: Result<String, Error> = kl_key.get_value("Layout Product Code");
-
     //         if let Ok(v) = ret {
     //             if v == product_code {
     //                 return Some(KeyboardRegKey { id: key.clone(), regkey: kl_key })
     //             }
     //         }
     //     }
-
     //     None
     // }
-
     // fn remove_by_product_code(product_code: &str) {
     //     if let Some(kl) = KeyboardRegKey::find_by_product_code(product_code) {
     //         keyboard_layouts_regkey().delete_subkey_all(kl.name()).unwrap();
@@ -410,11 +657,6 @@ fn next_preload_id(is_all_users: bool) -> u32 {
 fn test_sub_id() {
     println!("sub_id: {:08x}", next_substitute_id(0xabcd));
     println!("sub_id: {:08x}", next_substitute_id(0x0c09));
-}
-
-#[test]
-fn test_next_preload_id() {
-    println!("preload_id: {}", next_preload_id());
 }
 
 #[test]
