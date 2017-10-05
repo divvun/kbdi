@@ -41,6 +41,10 @@ pub fn uninstall(product_code: &str) -> Result<(), Error> {
     Err(Error::NotFound)
 }
 
+pub fn installed() -> Vec<KeyboardRegKey> {
+    KeyboardRegKey::installed()
+}
+
 fn keyboard_layouts_regkey() -> RegKey {
     RegKey::predef(HKEY_LOCAL_MACHINE)
         .open_subkey_with_flags(r"SYSTEM\CurrentControlSet\Control\Keyboard Layouts", KEY_READ | KEY_WRITE)
@@ -81,10 +85,6 @@ fn first_available_layout_id() -> String {
     layout_ids.sort();
     
     format!("{:04x}", layout_ids.last().unwrap() + 1)
-}
-
-pub fn installed_keyboards() -> Vec<KeyboardRegKey> {
-    KeyboardRegKey::installed()
 }
 
 impl KeyboardRegKey {

@@ -1,7 +1,7 @@
 use platform::*;
 use std::io;
+use std::fmt;
 use types::*;
-use winapi;
 use winapi::ctypes::c_char;    
 use winrust::*;
 
@@ -11,6 +11,18 @@ pub struct LanguageData {
     pub english_name: String,
     pub localised_name: String,
     pub script_name: String
+}
+
+impl fmt::Display for LanguageData {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Tag:           {}", self.tag);
+        writeln!(f, "Name:          {}", self.name);
+        writeln!(f, "English Name:  {}", self.english_name);
+        writeln!(f, "Native Name:   {}", self.localised_name);
+        writeln!(f, "Script:        {}", self.script_name);
+
+        Ok(())
+    }
 }
 
 pub fn remove_inputs_for_all_languages_internal() -> Result<(), io::Error> {

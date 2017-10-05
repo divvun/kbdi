@@ -52,17 +52,14 @@ fn main() {
         },
         ("query_language", Some(matches)) => {
             let tag = matches.value_of("TAG").unwrap();
-            match bcp47langs::lcid_from_bcp47(&tag) {
-                Some(lcid) => println!("LCID: 0x{:8x}", lcid),
-                None => println!("LCID: undefined")
-            };
+            println!("{}", query_language(tag));
         },
         ("list_languages", _) => {
             let languages = enabled_languages().unwrap().join(" ");
             println!("{}", &languages);
         },
         ("list_keyboards", _) => {
-            for k in keyboard::installed_keyboards().iter() {
+            for k in keyboard::installed().iter() {
                 println!("{}", k);
             }
         }

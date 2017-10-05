@@ -47,16 +47,15 @@ fn set_user_languages(tags: &[String]) -> Result<(), String> {
 pub fn query_language(tag: &str) -> String {
     let id = winnls::resolve_locale_name(tag)
         .unwrap_or(tag.to_owned());
-
+    
     match winlangdb::get_language_names(&id) {
-        None => format!("{}: Unsupported tag.", &id),
-        Some(data) => {
-            format!("\
-Tag: {}
-Name: {}
-English Name: {}
-Native Name: {}
-Script: {}", id, data.name, data.english_name, data.localised_name, data.script_name)
+        None => format!("{}: Unsupported tag.\n", &id),
+        Some(v) => {
+            let lcid = match bcp47langs::lcid_from_bcp47(&tag) {
+                Some(lcid) => format!("LCID:          0x{:08x}", lcid),
+                None => format!("LCID:          undefined")
+            };
+            format!("{}{}", v, lcid)
         }
     }
 }
