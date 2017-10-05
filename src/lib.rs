@@ -7,6 +7,7 @@ use platform::*;
 
 mod types;
 mod winrust;
+pub mod keyboard;
 pub mod platform;
 
 fn set_user_languages(tags: &[String]) -> Result<(), String> {

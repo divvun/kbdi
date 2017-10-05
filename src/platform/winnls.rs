@@ -1,6 +1,4 @@
 use std::io;
-use std::ffi::OsString;
-use winapi;
 use winapi::ctypes::c_int;
 use winapi::um::winnls as sys_winnls;
 use winrust::{from_wide_string, to_wide_string};
@@ -33,7 +31,7 @@ pub fn resolve_locale_name(tag: &str) -> Option<String> {
     Some(from_wide_string(&buf).unwrap())
 }
 
-fn locale_name_to_lcid(locale_name: &str) -> Result<u32, io::Error> {
+pub fn locale_name_to_lcid(locale_name: &str) -> Result<u32, io::Error> {
     let ret = unsafe {
         sys_winnls::LocaleNameToLCID(to_wide_string(locale_name).as_ptr(), 0)
     };

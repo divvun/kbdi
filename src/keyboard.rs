@@ -1,5 +1,8 @@
 use std::io;
 use winreg::*;
+use winreg::enums::*;
+use platform::*;
+use std::fmt;
 
 pub struct KeyboardRegKey {
     id: String,
@@ -29,7 +32,7 @@ pub fn install(
 
 pub fn uninstall(product_code: &str) -> Result<(), Error> {
     if let Some(record) = KeyboardRegKey::find_by_product_code(product_code) {
-        return match record.regkey.delete_subkey_all(kl.name()) {
+        return match record.regkey.delete_subkey_all(record.regkey_id()) {
             Ok(_) => Ok(()),
             Err(e) => Err(Error::IoError(e))
         }; 
@@ -80,13 +83,17 @@ fn first_available_layout_id() -> String {
     format!("{:04x}", layout_ids.last().unwrap() + 1)
 }
 
+pub fn installed_keyboards() -> Vec<KeyboardRegKey> {
+    KeyboardRegKey::installed()
+}
+
 impl KeyboardRegKey {
     fn find_by_product_code(product_code: &str) -> Option<KeyboardRegKey> {
         let regkey = keyboard_layouts_regkey();
         let keys: Vec<String> = regkey.enum_keys().map(|x| x.unwrap()).collect();
         for key in keys.into_iter() {
             let kl_key = regkey.open_subkey_with_flags(&key, KEY_READ | KEY_WRITE).unwrap();
-            let ret: Result<String, Error> = kl_key.get_value("Layout Product Code");
+            let ret: Result<String, io::Error> = kl_key.get_value("Layout Product Code");
             if let Ok(v) = ret {
                 if v == product_code {
                     return Some(KeyboardRegKey { id: key.clone(), regkey: kl_key })
@@ -96,8 +103,55 @@ impl KeyboardRegKey {
         None
     }
 
-    fn name(&self) -> &str {
+    fn installed() -> Vec<KeyboardRegKey> {
+        let regkey = keyboard_layouts_regkey();
+        regkey.enum_keys()
+            .map(|x| x.unwrap())
+            .filter(|x| x.starts_with("a"))
+            .map(|x| {
+                let k = regkey.open_subkey_with_flags(&x, KEY_READ | KEY_WRITE).unwrap();
+                KeyboardRegKey { id: x.to_owned(), regkey: k }
+            })
+            .collect()
+    }
+
+    pub fn regkey_id(&self) -> &str {
         &self.id
+    }
+
+    pub fn id(&self) -> Option<String> {
+        match self.regkey.get_value("Layout Id") {
+            Ok(v) => Some(v),
+            Err(_) => None
+        }
+    }
+
+    pub fn product_code(&self) -> Option<String> {
+        match self.regkey.get_value("Layout Product Code") {
+            Ok(v) => Some(v),
+            Err(_) => None
+        }
+    }
+    
+    pub fn language_name(&self) -> Option<String> {
+        match self.regkey.get_value("Custom Language Name") {
+            Ok(v) => Some(v),
+            Err(_) => None
+        }
+    }
+
+    pub fn layout_file(&self) -> Option<String> {
+        match self.regkey.get_value("Layout File") {
+            Ok(v) => Some(v),
+            Err(_) => None
+        }
+    }
+
+    pub fn layout_name(&self) -> Option<String> {
+        match self.regkey.get_value("Layout Text") {
+            Ok(v) => Some(v),
+            Err(_) => None
+        }
     }
 
     fn create(
@@ -107,7 +161,7 @@ impl KeyboardRegKey {
         layout_file: &str,
         layout_name: &str
     ) -> KeyboardRegKey {
-        let lcid = format!("{:04x}", locale_name_to_lcid(&tag).unwrap() as u16);
+        let lcid = format!("{:04x}", winnls::locale_name_to_lcid(&tag).unwrap() as u16);
 
         let key_name = first_available_keyboard_regkey_id(&lcid);
         let layout_id = first_available_layout_id();
@@ -127,6 +181,19 @@ impl KeyboardRegKey {
         regkey.set_value("Layout Text", &layout_name).unwrap();
 
         KeyboardRegKey { id: key_name.clone(), regkey: regkey }
+    }
+}
+
+impl fmt::Display for KeyboardRegKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Registry Key:   {}", self.regkey_id());
+        writeln!(f, "Layout Name:    {}", self.layout_name().unwrap_or("".to_string()));
+        writeln!(f, "Language Name:  {}", self.language_name().unwrap_or("".to_string()));
+        writeln!(f, "Layout File:    {}", self.layout_file().unwrap_or("".to_string()));
+        writeln!(f, "Layout Id:      {}", self.id().unwrap_or("".to_string()));
+        writeln!(f, "Product Code:   {}", self.product_code().unwrap_or("".to_string()));
+        
+        Ok(())
     }
 }
 

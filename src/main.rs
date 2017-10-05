@@ -30,6 +30,9 @@ fn main() {
         (@subcommand list_languages => 
             (about: "Lists all languages enabled for the current user")
         )
+        (@subcommand list_keyboards =>
+            (about: "Lists all keyboards installed on the system")
+        )
     ).get_matches();
 
     match matches.subcommand() {
@@ -57,6 +60,11 @@ fn main() {
         ("list_languages", _) => {
             let languages = enabled_languages().unwrap().join(" ");
             println!("{}", &languages);
+        },
+        ("list_keyboards", _) => {
+            for k in keyboard::installed_keyboards().iter() {
+                println!("{}", k);
+            }
         }
         _ => {}
     }
