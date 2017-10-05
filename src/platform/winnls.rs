@@ -5,6 +5,7 @@ use winrust::{from_wide_string, to_wide_string};
 
 const MAX_LOCALE_NAME_LEN: usize = 85usize;
 
+// TODO: remove panics
 pub fn resolve_locale_name(tag: &str) -> Option<String> {
     let mut buf = vec![0u16; MAX_LOCALE_NAME_LEN];
 

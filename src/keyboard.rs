@@ -1,17 +1,23 @@
 use std::io;
-use winreg::*;
-use winreg::enums::*;
+use winreg::RegKey;
+use winreg::enums::{
+    HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE
+};
 use platform::*;
 use std::fmt;
+use types::*;
+use std::path::Path;
 
 pub struct KeyboardRegKey {
     id: String,
     regkey: RegKey
 }
 
+#[derive(Debug)]
 pub enum Error {
     AlreadyExists,
     NotFound,
+    
     IoError(io::Error)
 }
 
@@ -30,12 +36,51 @@ pub fn install(
     Ok(())
 }
 
+fn enabled_input_methods() -> InputList {
+    let langs = ::enabled_languages().unwrap();
+    let mut imes: Vec<String> = vec![];
+    for lang in langs {
+        imes.append(&mut bcp47langs::get_user_language_input_methods(&lang)
+                .unwrap());
+    }
+    InputList::from(imes)
+}
+
+pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
+    let record = match KeyboardRegKey::find_by_product_code(product_code) {
+        Some(v) => v,
+        None => return Err(Error::NotFound)
+    };
+
+    // Check language is enabled or LCID check will fail
+    ::enable_language(tag).unwrap();
+    
+    // Get all enabled layouts first, and add our new one
+    // let mut imes = enabled_input_methods();
+    
+    // Generate input list item
+    let lcid = bcp47langs::lcid_from_bcp47(tag).unwrap();
+    let tip = InputList::from(format!("{:04X}:{}", lcid, record.regkey_id()));
+    // imes.inner_mut().push(tip);
+
+    // let input_list = InputList::from(imes);
+    input::install_layout(tip, 0).unwrap();
+    Ok(())
+}
+
+fn delete_keyboard_regkey(record: KeyboardRegKey) -> Result<(), Error> {
+    let klrk = keyboard_layouts_regkey();
+    match klrk.delete_subkey_all(record.regkey_id()) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(Error::IoError(e))
+    }
+}
+
 pub fn uninstall(product_code: &str) -> Result<(), Error> {
     if let Some(record) = KeyboardRegKey::find_by_product_code(product_code) {
-        return match record.regkey.delete_subkey_all(record.regkey_id()) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(Error::IoError(e))
-        }; 
+        delete_keyboard_regkey(record)?;
+        ::clean().unwrap();
+        return Ok(());
     }
 
     Err(Error::NotFound)
@@ -49,6 +94,68 @@ fn keyboard_layouts_regkey() -> RegKey {
     RegKey::predef(HKEY_LOCAL_MACHINE)
         .open_subkey_with_flags(r"SYSTEM\CurrentControlSet\Control\Keyboard Layouts", KEY_READ | KEY_WRITE)
         .unwrap()
+}
+
+pub fn remove_invalid() {
+    remove_duplicate_guids();
+    remove_invalid_dlls();
+    remove_invalid_kbids();
+}
+
+fn remove_invalid_kbids() {
+    let installed_imes: Vec<String> = KeyboardRegKey::installed().iter()
+        .map(|x| x.regkey_id().to_owned())
+        .collect();
+
+    let enabled_imes = enabled_input_methods();
+    let filtered_imes: Vec<InputListItem> = enabled_imes.into_inner()
+        .into_iter()
+        .filter(|i| {
+            let kbid = i.kbid().to_string().to_lowercase();
+            // Only handle custom keyboards
+            if kbid.starts_with("a") {
+                return true;
+            }
+            installed_imes.contains(&kbid)
+        })
+        .collect();
+
+    bcp47langs::remove_inputs_for_all_languages().unwrap();
+    input::install_layout(InputList::from(filtered_imes), 0).unwrap();
+}
+
+fn remove_duplicate_guids() {
+    // Find duplicate GUIDs, clear all but first
+    let mut guids = vec![];
+    let keys = KeyboardRegKey::installed();
+    for key in keys {
+        let guid = match key.product_code() {
+            Some(v) => v,
+            None => continue
+        };
+
+        if guids.contains(&guid) {
+            delete_keyboard_regkey(key).unwrap();
+        } else {
+            guids.push(guid);
+        }
+    }
+}
+
+fn remove_invalid_dlls() {
+    let keys = KeyboardRegKey::installed();
+
+    for key in keys {
+        let layout_file = match key.layout_file() {
+            Some(v) => v,
+            None => continue
+        };
+
+        if !Path::new(r"C:\Windows\System32").join(layout_file).exists() {
+            delete_keyboard_regkey(key).unwrap();
+        }
+
+    }
 }
 
 fn first_available_keyboard_regkey_id(lcid: &str) -> String {

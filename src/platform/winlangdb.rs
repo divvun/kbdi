@@ -25,15 +25,15 @@ impl fmt::Display for LanguageData {
     }
 }
 
-pub fn remove_inputs_for_all_languages_internal() -> Result<(), io::Error> {
-    let ret = unsafe { sys::winlangdb::RemoveInputsForAllLanguagesInternal() };
+// pub fn remove_inputs_for_all_languages_internal() -> Result<(), io::Error> {
+//     let ret = unsafe { sys::winlangdb::RemoveInputsForAllLanguagesInternal() };
 
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
-    }
+//     if ret < 0 {
+//         return Err(io::Error::last_os_error());
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 pub fn ensure_language_profile_exists() -> Result<(), io::Error> {
     let ret = unsafe { sys::winlangdb::EnsureLanguageProfileExists() };
@@ -87,14 +87,14 @@ pub fn set_user_languages(tags: &[String]) -> Result<(), io::Error> {
 }
 
 pub fn transform_input_methods(methods: InputList, tag: &str) -> InputList {
-    let hmethods = HString::from(methods.0);
+    let hmethods = HString::from(String::from(methods));
     let htag = HString::from(tag);
     let out = unsafe {
         let mut out = HString::null();
         sys::winlangdb::TransformInputMethodsForLanguage(*hmethods, *htag, &mut *out);
         out
     };
-    InputList(String::from(out))
+    InputList::from(String::from(out))
 }
 
 pub fn default_input_method(tag: &str) -> InputList {
@@ -104,5 +104,5 @@ pub fn default_input_method(tag: &str) -> InputList {
         sys::winlangdb::GetDefaultInputMethodForLanguage(*htag, &mut *out);
         out
     };
-    InputList(String::from(out))
+    InputList::from(String::from(out))
 }

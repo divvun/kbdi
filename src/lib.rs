@@ -1,5 +1,8 @@
 extern crate winapi;
 extern crate winreg;
+extern crate libloading;
+#[macro_use]
+extern crate lazy_static;
 
 use std::io;
 use winrust::*;
@@ -18,30 +21,7 @@ fn set_user_languages(tags: &[String]) -> Result<(), String> {
         .collect();
 
     winlangdb::set_user_languages(&valid_tags)
-        .or_else(|_| Err("Failed enabling languages".to_owned()))?;
-    winlangdb::remove_inputs_for_all_languages_internal()
-        .or_else(|_| Err("Remove inputs failed".to_owned()))?;
-
-    let results: Vec<Result<(), String>> = valid_tags.iter().map(|tag| {
-        let lcid = match bcp47langs::lcid_from_bcp47(tag) {
-            Some(v) => v,
-            None => return Err("Failed to enable tag".to_owned())
-        };
-
-        let mut inputs = winlangdb::default_input_method(tag);
-        inputs = winlangdb::transform_input_methods(inputs, tag);
-        input::install_layout(inputs)
-            .or_else(|_| Err("failed to enable layout".to_owned()))
-    }).collect();
-
-    let errors: Vec<&Result<(), String>> =
-        results.iter().filter(|x| x.is_err()).collect();
-
-    if errors.len() > 0 {
-        return Err("Enabling some layouts caused errors, which were ignored.".to_owned())
-    }
-
-    Ok(())
+        .or_else(|_| Err("Failed enabling languages".to_owned()))
 }
 
 pub fn query_language(tag: &str) -> String {
@@ -65,10 +45,22 @@ pub fn enabled_languages() -> Result<Vec<String>, io::Error> {
     bcp47langs::get_user_languages()
 }
 
+type LangKeyboards = (String, Vec<String>);
+
+pub fn enabled_keyboards() -> Result<Vec<LangKeyboards>, io::Error> {
+    let langs = enabled_languages()?;
+    Ok(langs.into_iter()
+        .map(|lang| {
+            let imes = bcp47langs::get_user_language_input_methods(&lang)
+                .unwrap();
+            (lang, imes)
+        })
+        .collect())
+}
+
 // TODO: reimplement support for adding native language name, optionally
 pub fn enable_language(tag: &str) -> Result<(), io::Error> {
     let mut langs = enabled_languages()?;
-    
     let lang = tag.to_owned();
 
     if langs.contains(&lang) {
@@ -79,6 +71,27 @@ pub fn enable_language(tag: &str) -> Result<(), io::Error> {
 
     set_user_languages(&langs).unwrap();
     //    .or_else(|_| Err("Error while setting languages.".to_owned()))
+    Ok(())
+}
+
+fn disable_empty_languages() -> Result<(), io::Error> {
+    let langs = enabled_languages()?;
+    let filtered_langs: Vec<String> = langs.into_iter()
+        .filter(|tag| {
+            let imes = bcp47langs::get_user_language_input_methods(&tag)
+                .unwrap_or(vec![]);
+            imes.len() > 0
+        })
+        .collect();
+    
+    set_user_languages(&filtered_langs).unwrap();
+    Ok(())
+        //.or_else(|_| Err("Error while setting languages.".to_owned()))
+}
+
+pub fn clean() -> Result<(), String> {
+    keyboard::remove_invalid();
+    disable_empty_languages().unwrap();
     Ok(())
 }
 
