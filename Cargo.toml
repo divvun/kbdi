@@ -23,6 +23,9 @@ version = "2.24.1"
 default-features = false
 features = []
 
+[build-dependencies]
+embed-resource = "1.1"
+
 [profile.release]
 lto = false
 panic = "abort"
