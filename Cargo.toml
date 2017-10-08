@@ -27,6 +27,6 @@ features = []
 embed-resource = "1.1"
 
 [profile.release]
-lto = false
+lto = true
 panic = "abort"
 debug = true
