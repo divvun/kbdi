@@ -1,20 +1,26 @@
 # kbdi
 
 ```
-Installs a keyboard layout to the registry
+kbdi 0.3.0
+Brendan Molloy <brendan@bbqsrc.net>
+Configure Windows registry values for keyboards
 
 USAGE:
-    kbdi.exe install [OPTIONS] --guid <GUID> --language <LANG> --dll <DLL> --language_code <CODE>
+    kbdi.exe <SUBCOMMAND>
 
 FLAGS:
     -h, --help       Prints help information
     -V, --version    Prints version information
 
-OPTIONS:
-    -i, --language_code <CODE>        Language code as supported by Windows (eg: sma-Latn-NO)
-    -d, --dll <DLL>                   Name of keyboard DLL (eg: kbdfoo01.dll)
-    -g, --guid <GUID>                 Product code GUID for linking to MSI (eg: {42c3de12-28...})
-    -l, --language <LANG>             Language name in specified language (eg: Norsk)
-    -n, --layout_name <LAYOUTNAME>    Layout name, defaults to LANGNAME (eg: US Extended)
-    -L, --lcid <LCID>                 Microsoft l12n ID (eg: 00c9)
+SUBCOMMANDS:
+    clean                 Remove empty languages and invalid keyboards
+    help                  Prints this message or the help of the given subcommand(s)
+    keyboard_enable       Enables a keyboard for a user
+    keyboard_enabled      Lists all enabled keyboards for the user
+    keyboard_install      Installs a keyboard layout to the registry
+    keyboard_list         Lists all keyboards installed on the system
+    keyboard_uninstall    Uninstalls a keyboard layout from the registry
+    language_enable       Enable a language with provided tag
+    language_list         Lists all languages enabled for the current user
+    language_query        Get data about language tag
 ```
