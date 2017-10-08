@@ -3,7 +3,6 @@ extern crate clap;
 extern crate kbdi;
 
 use kbdi::*;
-use kbdi::platform::*;
 
 fn main() {
     let matches = clap_app!(kbdi =>
@@ -14,10 +13,10 @@ fn main() {
         (@subcommand keyboard_install =>
             (about: "Installs a keyboard layout to the registry")
             (@arg TAG: -t +takes_value +required "Language tag in BCP 47 format (eg: sma-Latn-NO)")
-            (@arg LANG: -l +takes_value +required "Native language name (eg: Norsk)")
+            (@arg LAYOUT: -n +takes_value +required "Layout name (eg: Skolt Sami (Norway))")
             (@arg GUID: -g +takes_value +required "Product code GUID (eg: {42c3de12-28...})")
             (@arg DLL: -d +takes_value +required "Name of keyboard DLL (eg: kbdfoo01.dll)")
-            (@arg LAYOUT: -n +takes_value "Layout name, defaults to LANG (eg: Skolt Sami (Norway))")
+            (@arg LANG: -l +takes_value "Native language name, if required (eg: Norsk)")
             (@arg enable: -e "Enable keyboard immediately after installing")
         )
         (@subcommand keyboard_uninstall =>
@@ -53,14 +52,14 @@ fn main() {
 
     match matches.subcommand() {
         ("keyboard_install", Some(matches)) => {
-            let lang_name = matches.value_of("LANG").unwrap();
+            let lang_name = matches.value_of("LANG");
             let layout_dll = matches.value_of("DLL").unwrap();
-            let layout_name = matches.value_of("LAYOUT").unwrap_or(&lang_name);
+            let layout_name = matches.value_of("LAYOUT").unwrap();
             let tag = matches.value_of("TAG").unwrap();
             let guid = matches.value_of("GUID").unwrap();
             let wants_enable = matches.is_present("enable");
             
-            keyboard::install(tag, lang_name, guid, layout_dll, layout_name).unwrap();
+            keyboard::install(tag, layout_name, guid, layout_dll, lang_name).unwrap();
             if wants_enable {
                 keyboard::enable(tag, guid).unwrap();
             }
@@ -77,7 +76,7 @@ fn main() {
         },
         ("language_enable", Some(matches)) => {
             let tag = matches.value_of("TAG").unwrap();
-            enable_language(tag);
+            enable_language(tag).unwrap();
         },
         ("language_query", Some(matches)) => {
             let tag = matches.value_of("TAG").unwrap();

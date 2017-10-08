@@ -63,7 +63,7 @@ impl InputList {
         &self.__inner
     }
 
-    pub fn into_inner(mut self) -> Vec<InputListItem> {
+    pub fn into_inner(self) -> Vec<InputListItem> {
         self.__inner
     }
 }

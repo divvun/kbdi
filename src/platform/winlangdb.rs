@@ -15,11 +15,11 @@ pub struct LanguageData {
 
 impl fmt::Display for LanguageData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Tag:           {}", self.tag);
-        writeln!(f, "Name:          {}", self.name);
-        writeln!(f, "English Name:  {}", self.english_name);
-        writeln!(f, "Native Name:   {}", self.localised_name);
-        writeln!(f, "Script:        {}", self.script_name);
+        writeln!(f, "Tag:           {}", self.tag)?;
+        writeln!(f, "Name:          {}", self.name)?;
+        writeln!(f, "English Name:  {}", self.english_name)?;
+        writeln!(f, "Native Name:   {}", self.localised_name)?;
+        writeln!(f, "Script:        {}", self.script_name)?;
 
         Ok(())
     }

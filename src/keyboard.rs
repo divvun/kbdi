@@ -23,16 +23,21 @@ pub enum Error {
 
 pub fn install(
     tag: &str,
-    display_name: &str,
+    layout_name: &str,
     product_code: &str,
     layout_file: &str,
-    layout_name: &str
+    display_name: Option<&str>
 ) -> Result<(), Error> {
     if let Some(_) = KeyboardRegKey::find_by_product_code(product_code) {
         return Err(Error::AlreadyExists);
     }
 
-    KeyboardRegKey::create(tag, display_name, product_code, layout_file, layout_name);
+    let lang_name = match display_name {
+        Some(v) => v.to_owned(),
+        None => winlangdb::get_language_names(tag).unwrap().name
+    };
+
+    KeyboardRegKey::create(tag, &lang_name, product_code, layout_file, layout_name);
     Ok(())
 }
 
@@ -293,12 +298,12 @@ impl KeyboardRegKey {
 
 impl fmt::Display for KeyboardRegKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Registry Key:   {}", self.regkey_id());
-        writeln!(f, "Layout Name:    {}", self.layout_name().unwrap_or("".to_string()));
-        writeln!(f, "Language Name:  {}", self.language_name().unwrap_or("".to_string()));
-        writeln!(f, "Layout File:    {}", self.layout_file().unwrap_or("".to_string()));
-        writeln!(f, "Layout Id:      {}", self.id().unwrap_or("".to_string()));
-        writeln!(f, "Product Code:   {}", self.product_code().unwrap_or("".to_string()));
+        writeln!(f, "Registry Key:   {}", self.regkey_id())?;
+        writeln!(f, "Layout Name:    {}", self.layout_name().unwrap_or("".to_string()))?;
+        writeln!(f, "Language Name:  {}", self.language_name().unwrap_or("".to_string()))?;
+        writeln!(f, "Layout File:    {}", self.layout_file().unwrap_or("".to_string()))?;
+        writeln!(f, "Layout Id:      {}", self.id().unwrap_or("".to_string()))?;
+        writeln!(f, "Product Code:   {}", self.product_code().unwrap_or("".to_string()))?;
         
         Ok(())
     }
