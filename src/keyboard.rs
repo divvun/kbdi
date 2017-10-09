@@ -28,15 +28,18 @@ pub fn install(
     layout_file: &str,
     display_name: Option<&str>
 ) -> Result<(), Error> {
+    println!("D: Checking if already installed");
     if let Some(_) = KeyboardRegKey::find_by_product_code(product_code) {
         return Err(Error::AlreadyExists);
     }
 
+    println!("D: Checking language name is valid");
     let lang_name = match display_name {
         Some(v) => v.to_owned(),
         None => winlangdb::get_language_names(tag).unwrap().name
     };
 
+    println!("D: Creating registry key");
     KeyboardRegKey::create(tag, &lang_name, product_code, layout_file, layout_name);
     Ok(())
 }
@@ -58,17 +61,20 @@ pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
     };
 
     // Check language is enabled or LCID check will fail
+    println!("D: Enabling language by tag");
     ::enable_language(tag).unwrap();
     
     // Get all enabled layouts first, and add our new one
     // let mut imes = enabled_input_methods();
     
     // Generate input list item
+    println!("D: Get LCID from tag");
     let lcid = bcp47langs::lcid_from_bcp47(tag).unwrap();
     let tip = InputList::from(format!("{:04X}:{}", lcid, record.regkey_id()));
     // imes.inner_mut().push(tip);
 
     // let input_list = InputList::from(imes);
+    println!("D: Install layout, flag 0");
     input::install_layout(tip, 0).unwrap();
     Ok(())
 }
@@ -273,15 +279,19 @@ impl KeyboardRegKey {
         layout_file: &str,
         layout_name: &str
     ) -> KeyboardRegKey {
+        println!("D: Locale name to lcid");
         let lcid = format!("{:04x}", winnls::locale_name_to_lcid(&tag).unwrap() as u16);
 
+        println!("D: Get first available reg ids");
         let key_name = first_available_keyboard_regkey_id(&lcid);
         let layout_id = first_available_layout_id();
 
+        println!("D: open regkey");
         let regkey = keyboard_layouts_regkey()
                 .create_subkey_with_flags(&key_name, KEY_READ | KEY_WRITE)
                 .unwrap();
 
+        println!("D: set regkey vals");
         regkey.set_value("Custom Language Display Name",
             &format!("@%SystemRoot%\\system32\\{},-1100", &layout_file).to_string()).unwrap();
         regkey.set_value("Custom Language Name", &display_name).unwrap();

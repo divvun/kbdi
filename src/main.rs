@@ -59,8 +59,10 @@ fn main() {
             let guid = matches.value_of("GUID").unwrap();
             let wants_enable = matches.is_present("enable");
             
+            println!("Installing keyboard...");
             keyboard::install(tag, layout_name, guid, layout_dll, lang_name).unwrap();
             if wants_enable {
+                println!("Enable keyboard...");
                 keyboard::enable(tag, guid).unwrap();
             }
         },
