@@ -1,6 +1,6 @@
 [root]
 name = "kbdi"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "clap 2.26.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embed-resource 1.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
