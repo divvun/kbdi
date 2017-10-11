@@ -33,7 +33,8 @@ pub fn resolve_locale_name(tag: &str) -> Option<String> {
 }
 
 pub fn locale_name_to_lcid(locale_name: &str) -> Result<u32, io::Error> {
-    let tag = resolve_locale_name(locale_name).unwrap();
+    let tag = resolve_locale_name(locale_name)
+        .unwrap_or(locale_name.to_owned());
 
     let ret = unsafe {
         sys_winnls::LocaleNameToLCID(to_wide_string(&tag).as_ptr(), 0)
