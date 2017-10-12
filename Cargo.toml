@@ -4,6 +4,21 @@ version = "0.3.1"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 publish = false
 
+[features]
+legacy = []
+
+[[bin]]
+name = "kbdi-legacy"
+required-features = ["legacy"]
+doc = false
+path = "src/bin/kbdi_legacy.rs"
+
+[[bin]]
+name = "kbdi"
+required-features = []
+doc = false
+path = "src/bin/kbdi.rs"
+
 [dependencies]
 libloading = { git = "https://github.com/nagisa/rust_libloading" }
 lazy_static = "*"

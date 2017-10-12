@@ -4,6 +4,7 @@ use std::fmt;
 use types::*;
 use winapi::ctypes::c_char;    
 use winrust::*;
+use winrust::hstring::*;
 
 pub struct LanguageData {
     pub tag: String,

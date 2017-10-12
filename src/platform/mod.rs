@@ -1,4 +1,6 @@
+#[cfg(not(feature = "legacy"))]
 pub mod bcp47langs;
+#[cfg(not(feature = "legacy"))]
 pub mod winlangdb;
 pub mod winnls;
 pub mod sys;
@@ -18,5 +20,17 @@ pub mod input {
         }
 
         Ok(())
+    }
+}
+
+pub mod winuser {
+    use ::*;
+    use winrust::*;
+    use winapi::um::winuser;
+    use winapi::shared::minwindef::HKL;
+
+    pub fn load_keyboard_layout(klid: &str) {
+        unsafe { winuser::LoadKeyboardLayoutW(to_wide_string(klid).as_ptr(), 
+            winuser::KLF_ACTIVATE | winuser::KLF_SETFORPROCESS) };
     }
 }

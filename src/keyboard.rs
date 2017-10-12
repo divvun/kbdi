@@ -8,6 +8,11 @@ use std::fmt;
 use types::*;
 use std::path::Path;
 
+#[cfg(not(feature = "legacy"))]
+pub use keyboard_win8::*;
+#[cfg(feature = "legacy")]
+pub use keyboard_legacy::*;
+
 pub struct KeyboardRegKey {
     id: String,
     regkey: RegKey
@@ -17,7 +22,6 @@ pub struct KeyboardRegKey {
 pub enum Error {
     AlreadyExists,
     NotFound,
-    
     IoError(io::Error)
 }
 
@@ -36,7 +40,10 @@ pub fn install(
     println!("D: Checking language name is valid");
     let lang_name = match display_name {
         Some(v) => v.to_owned(),
-        None => winlangdb::get_language_names(tag).unwrap().name
+        #[cfg(not(feature = "legacy"))]
+        None => winlangdb::get_language_names(tag).unwrap().name,
+        #[cfg(feature = "legacy")]
+        None => layout_name.to_owned()
     };
 
     println!("D: Creating registry key");
@@ -44,39 +51,9 @@ pub fn install(
     Ok(())
 }
 
+#[cfg(feature = "legacy")]
 fn enabled_input_methods() -> InputList {
-    let langs = ::enabled_languages().unwrap();
-    let mut imes: Vec<String> = vec![];
-    for lang in langs {
-        imes.append(&mut bcp47langs::get_user_language_input_methods(&lang)
-                .unwrap());
-    }
-    InputList::from(imes)
-}
-
-pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
-    let record = match KeyboardRegKey::find_by_product_code(product_code) {
-        Some(v) => v,
-        None => return Err(Error::NotFound)
-    };
-
-    // Check language is enabled or LCID check will fail
-    println!("D: Enabling language by tag");
-    ::enable_language(tag).unwrap();
-    
-    // Get all enabled layouts first, and add our new one
-    // let mut imes = enabled_input_methods();
-    
-    // Generate input list item
-    println!("D: Get LCID from tag");
-    let lcid = bcp47langs::lcid_from_bcp47(tag).unwrap();
-    let tip = InputList::from(format!("{:04X}:{}", lcid, record.regkey_id()));
-    // imes.inner_mut().push(tip);
-
-    // let input_list = InputList::from(imes);
-    println!("D: Install layout, flag 0");
-    input::install_layout(tip, 0).unwrap();
-    Ok(())
+    InputList::from("".to_owned())
 }
 
 fn delete_keyboard_regkey(record: KeyboardRegKey) -> Result<(), Error> {
@@ -110,29 +87,8 @@ fn keyboard_layouts_regkey() -> RegKey {
 pub fn remove_invalid() {
     remove_duplicate_guids();
     remove_invalid_dlls();
+    #[cfg(not(feature = "legacy"))]
     remove_invalid_kbids();
-}
-
-fn remove_invalid_kbids() {
-    let installed_imes: Vec<String> = KeyboardRegKey::installed().iter()
-        .map(|x| x.regkey_id().to_owned())
-        .collect();
-
-    let enabled_imes = enabled_input_methods();
-    let filtered_imes: Vec<InputListItem> = enabled_imes.into_inner()
-        .into_iter()
-        .filter(|i| {
-            let kbid = i.kbid().to_string().to_lowercase();
-            // Only handle custom keyboards
-            if kbid.starts_with("a") {
-                return true;
-            }
-            installed_imes.contains(&kbid)
-        })
-        .collect();
-
-    bcp47langs::remove_inputs_for_all_languages().unwrap();
-    input::install_layout(InputList::from(filtered_imes), 0).unwrap();
 }
 
 fn remove_duplicate_guids() {
@@ -206,7 +162,7 @@ fn first_available_layout_id() -> String {
 }
 
 impl KeyboardRegKey {
-    fn find_by_product_code(product_code: &str) -> Option<KeyboardRegKey> {
+    pub fn find_by_product_code(product_code: &str) -> Option<KeyboardRegKey> {
         let regkey = keyboard_layouts_regkey();
         let keys: Vec<String> = regkey.enum_keys().map(|x| x.unwrap()).collect();
         for key in keys.into_iter() {
@@ -221,7 +177,7 @@ impl KeyboardRegKey {
         None
     }
 
-    fn installed() -> Vec<KeyboardRegKey> {
+    pub fn installed() -> Vec<KeyboardRegKey> {
         let regkey = keyboard_layouts_regkey();
         regkey.enum_keys()
             .map(|x| x.unwrap())
@@ -272,7 +228,7 @@ impl KeyboardRegKey {
         }
     }
 
-    fn create(
+    pub fn create(
         tag: &str,
         display_name: &str,
         product_code: &str,
@@ -280,7 +236,10 @@ impl KeyboardRegKey {
         layout_name: &str
     ) -> KeyboardRegKey {
         println!("D: Locale name to lcid");
-        let lcid = format!("{:04x}", winnls::locale_name_to_lcid(&tag).unwrap() as u16);
+        let lcid = format!("{:04x}", winnls::locale_name_to_lcid(&tag)
+                .unwrap_or(0x0c00) as u16);
+
+        println!("D: Using lcid '{}'", lcid);
 
         println!("D: Get first available reg ids");
         let key_name = first_available_keyboard_regkey_id(&lcid);
@@ -299,6 +258,7 @@ impl KeyboardRegKey {
             &format!("@%SystemRoot%\\system32\\{},-1000", &layout_file).to_string()).unwrap();
         regkey.set_value("Layout File", &layout_file).unwrap();
         regkey.set_value("Layout Id", &layout_id).unwrap();
+        regkey.set_value("Layout Locale Name", &tag).unwrap();
         regkey.set_value("Layout Product Code", &product_code).unwrap();
         regkey.set_value("Layout Text", &layout_name).unwrap();
 
@@ -318,67 +278,3 @@ impl fmt::Display for KeyboardRegKey {
         Ok(())
     }
 }
-
-// fn kbd_layout_sub_regkey(is_all_users: bool) -> RegKey {
-//     base_regkey(is_all_users)
-//         .open_subkey_with_flags(r"Keyboard Layout\Substitutes", KEY_READ | KEY_WRITE)
-//         .unwrap()
-// }
-
-// fn kbd_layout_preload_regkey(is_all_users: bool) -> RegKey {
-//     base_regkey(is_all_users)
-//         .open_subkey_with_flags(r"Keyboard Layout\Preload", KEY_READ | KEY_WRITE)
-//         .unwrap()
-// }
-
-// /// Substitute IDs begin with 0000, then increment to d001, and continue incrementing dXXX.
-// fn next_substitute_id(suffix: u16) -> u32 {
-//     let prefix: u16 = RegKey::predef(HKEY_CURRENT_USER)
-//         .open_subkey_with_flags(r"Keyboard Layout\Substitutes", KEY_READ)
-//         .unwrap()
-//         .enum_values()
-//         .fold(0u16, |acc, x| {
-//             let (k, _) = x.unwrap();
-
-//             if let Ok(kk) = u32::from_str_radix(&k, 16) {
-//                 if (kk as u16) == suffix {
-//                     // Move high bits down
-//                     let v = (kk >> 16) as u16;
-
-//                     if v >= acc {
-//                         return if v == 0 {
-//                             0xd001
-//                         } else {
-//                             v + 1
-//                         }
-//                     }
-//                 }
-
-//                 acc
-//             } else {
-//                 acc
-//             }
-//         });
-
-//     ((prefix as u32) << 16) + (suffix as u32)
-// }
-
-// fn next_preload_id(is_all_users: bool) -> u32 {
-//     base_regkey(is_all_users)
-//         .open_subkey_with_flags(r"Keyboard Layout\Preload", KEY_READ)
-//         .unwrap()
-//         .enum_values()
-//         .fold(1u32, |acc, x| {
-//             let (k, _) = x.unwrap();
-
-//             if let Ok(v) = u32::from_str_radix(&k, 10) {
-//                 if v >= acc {
-//                     v + 1
-//                 } else {
-//                     acc
-//                 }
-//             } else {
-//                 acc
-//             }
-//         })
-// }

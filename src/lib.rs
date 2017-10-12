@@ -11,8 +11,15 @@ use platform::*;
 mod types;
 mod winrust;
 pub mod keyboard;
+#[cfg(not(feature = "legacy"))]
+mod keyboard_win8;
+#[cfg(feature = "legacy")]
+mod keyboard_legacy;
 pub mod platform;
 
+type LangKeyboards = (String, Vec<String>);
+
+#[cfg(not(feature = "legacy"))]
 fn set_user_languages(tags: &[String]) -> Result<(), String> {
     let valid_tags: Vec<String> =
         tags.iter()
@@ -24,6 +31,7 @@ fn set_user_languages(tags: &[String]) -> Result<(), String> {
         .or_else(|_| Err("Failed enabling languages".to_owned()))
 }
 
+#[cfg(not(feature = "legacy"))]
 pub fn query_language(tag: &str) -> String {
     let id = winnls::resolve_locale_name(tag)
         .unwrap_or(tag.to_owned());
@@ -40,13 +48,28 @@ pub fn query_language(tag: &str) -> String {
     }
 }
 
+#[cfg(feature = "legacy")]
+pub fn query_language(tag: &str) -> String {
+    let id = winnls::resolve_locale_name(tag)
+        .unwrap_or(tag.to_owned());
+
+    let a = format!("Tag:  {}", id);
+
+    let b = match winnls::locale_name_to_lcid(&id) {
+        Ok(lcid) => format!("LCID: 0x{:08x}", lcid),
+        Err(_) => format!("LCID: undefined")
+    };
+
+    format!("{}\n{}", a, b)
+}
+
+#[cfg(not(feature = "legacy"))]
 pub fn enabled_languages() -> Result<Vec<String>, io::Error> {
     winlangdb::ensure_language_profile_exists()?;
     bcp47langs::get_user_languages()
 }
 
-type LangKeyboards = (String, Vec<String>);
-
+#[cfg(not(feature = "legacy"))]
 pub fn enabled_keyboards() -> Result<Vec<LangKeyboards>, io::Error> {
     let langs = enabled_languages()?;
     Ok(langs.into_iter()
@@ -59,6 +82,7 @@ pub fn enabled_keyboards() -> Result<Vec<LangKeyboards>, io::Error> {
 }
 
 // TODO: reimplement support for adding native language name, optionally
+#[cfg(not(feature = "legacy"))]
 pub fn enable_language(tag: &str) -> Result<(), io::Error> {
     let mut langs = enabled_languages()?;
     let lang = tag.to_owned();
@@ -74,6 +98,7 @@ pub fn enable_language(tag: &str) -> Result<(), io::Error> {
     Ok(())
 }
 
+#[cfg(not(feature = "legacy"))]
 fn disable_empty_languages() -> Result<(), io::Error> {
     let langs = enabled_languages()?;
     let filtered_langs: Vec<String> = langs.into_iter()
@@ -91,34 +116,11 @@ fn disable_empty_languages() -> Result<(), io::Error> {
 
 pub fn clean() -> Result<(), String> {
     keyboard::remove_invalid();
+    #[cfg(not(feature = "legacy"))]
     disable_empty_languages().unwrap();
     Ok(())
 }
 
-// pub fn system_locales() -> Vec<String> {
-//     unsafe extern "system" fn callback(locale: LPWSTR, _: DWORD, l_param: LPARAM) -> i32 {
-//         let s = lpwstr_to_string(locale);
-//         let vec = l_param as *mut Vec<String>;
-//         (*vec).push(s);
-//         1
-//     }
-//     let raw_vec = Box::into_raw(Box::new(vec![]));
-//     unsafe {
-//         winapi::um::winnls::EnumSystemLocalesEx(Some(callback), 0, raw_vec as LPARAM, null_mut());
-//         *Box::from_raw(raw_vec)
-//     }
-// }
-
-// fn base_regkey(is_all_users: bool) -> RegKey {
-//     match is_all_users {
-//         true => {
-//             RegKey::predef(HKEY_USERS)
-//                 .open_subkey_with_flags(r".DEFAULT", KEY_READ | KEY_WRITE)
-//                 .unwrap()
-//         },
-//         false => RegKey::predef(HKEY_CURRENT_USER)
-//     }
-// }
 
 // #[test]
 // fn test_sub_id() {

@@ -10,6 +10,7 @@ macro_rules! lib_extern {
     };
 }
 
+#[cfg(not(feature = "legacy"))]
 pub mod bcp47langs {
     use winapi::winrt::hstring::HSTRING;
     use winapi::ctypes::{c_char, c_int};
@@ -42,6 +43,7 @@ pub mod input {
     }
 }
 
+#[cfg(not(feature = "legacy"))]
 pub mod winlangdb {
     use winapi::ctypes::*;
     use winapi::um::winnt::WCHAR;
