@@ -45,9 +45,9 @@ fn main() {
         // (@subcommand keyboard_enabled =>
         //     (about: "Lists all enabled keyboards for the user")
         // )
-        // (@subcommand clean =>
-        //     (about: "Remove empty languages and invalid keyboards")
-        // )
+        (@subcommand clean =>
+            (about: "Remove empty languages and invalid keyboards")
+        )
     ).get_matches();
 
     match matches.subcommand() {
@@ -98,9 +98,9 @@ fn main() {
         //         println!("{:?}", k);
         //     }
         // },
-        // ("clean", _) => {
-        //     clean().unwrap();
-        // },
+        ("clean", _) => {
+            clean().unwrap();
+        },
         _ => {}
     };
 }
