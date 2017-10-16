@@ -1,6 +1,7 @@
 use platform::*;
 use types::*;
 use keyboard::{Error, KeyboardRegKey};
+use language::LanguageRegKey;
 
 fn enabled_input_methods() -> InputList {
     let langs = ::enabled_languages().unwrap();
@@ -12,7 +13,7 @@ fn enabled_input_methods() -> InputList {
     InputList::from(imes)
 }
 
-pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
+pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<(), Error> {
     let record = match KeyboardRegKey::find_by_product_code(product_code) {
         Some(v) => v,
         None => return Err(Error::NotFound)
@@ -21,6 +22,15 @@ pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
     // Check language is enabled or LCID check will fail
     println!("D: Enabling language by tag");
     ::enable_language(tag).unwrap();
+
+    // Set human visible language in dropdown
+    if let Some(lang) = lang_name {
+         println!("D: Setting cached language name");
+
+         if let Some(mut lrk) = LanguageRegKey::find_by_tag(tag) {
+             lrk.set_language_name(lang);
+         }
+    }
     
     // Generate input list item
     println!("D: Get LCID from tag");
@@ -29,6 +39,7 @@ pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
 
     println!("D: Install layout, flag 0");
     input::install_layout(tip, 0).unwrap();
+
     Ok(())
 }
 

@@ -27,6 +27,7 @@ fn main() {
             (about: "Enables a keyboard for a user")
             (@arg TAG: -t +takes_value +required "Language tag in BCP 47 format (eg: sma-Latn-NO)")
             (@arg GUID: -g +takes_value +required "Product code GUID (eg: {42c3de12-28...})")
+            (@arg LANG: -l +takes_value "Native language name, if required (eg: Norsk)")
         )
         (@subcommand language_enable =>
             (about: "Enable a language with provided tag")
@@ -63,7 +64,7 @@ fn main() {
             keyboard::install(tag, layout_name, guid, layout_dll, lang_name).unwrap();
             if wants_enable {
                 println!("Enable keyboard...");
-                keyboard::enable(tag, guid).unwrap();
+                keyboard::enable(tag, guid, lang_name).unwrap();
             }
         },
         ("keyboard_uninstall", Some(matches)) => {
@@ -71,10 +72,11 @@ fn main() {
             keyboard::uninstall(guid).unwrap();
         },
         ("keyboard_enable", Some(matches)) => {
+            let lang_name = matches.value_of("LANG");
             let tag = matches.value_of("TAG").unwrap();
             let guid = matches.value_of("GUID").unwrap();
 
-            keyboard::enable(tag, guid).unwrap();
+            keyboard::enable(tag, guid, lang_name).unwrap();
         },
         ("language_enable", Some(matches)) => {
             let tag = matches.value_of("TAG").unwrap();

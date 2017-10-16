@@ -10,6 +10,7 @@ use platform::*;
 
 mod types;
 mod winrust;
+mod language;
 pub mod keyboard;
 #[cfg(not(feature = "legacy"))]
 mod keyboard_win8;
