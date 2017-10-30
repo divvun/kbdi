@@ -1,6 +1,6 @@
 [package]
 name = "kbdi"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 publish = false
 
