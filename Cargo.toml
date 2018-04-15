@@ -23,11 +23,12 @@ path = "src/bin/kbdi.rs"
 libloading = { git = "https://github.com/nagisa/rust_libloading" }
 lazy_static = "*"
 sentry-rs = "2"
+winapi = { version = "0.3", features = ["everything"] }
 
-[dependencies.winapi]
-git = "https://github.com/bbqsrc/winapi-rs"
-branch = "move-kernel32-nls-funcs"
-features = ["everything"]
+# [dependencies.winapi]
+# git = "https://github.com/bbqsrc/winapi-rs"
+# branch = "move-kernel32-nls-funcs"
+# features = ["everything"]
 
 [dependencies.winreg]
 version = "0.4"

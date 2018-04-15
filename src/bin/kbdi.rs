@@ -20,6 +20,8 @@ lazy_static! {
 }
 
 fn main() {
+    let _ = &SENTRY;
+
     let matches = clap_app!(kbdi =>
         (@setting SubcommandRequiredElseHelp)
         (version: crate_version!())

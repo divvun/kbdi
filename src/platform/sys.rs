@@ -39,7 +39,9 @@ pub mod input {
     }
 
     lib_extern! {
-        InstallLayoutOrTip(tip_string: *const WCHAR, flags: c_int) -> c_int 
+        InstallLayoutOrTip(tip_string: *const WCHAR, flags: c_int) -> c_int;
+        InstallLayoutOrTipUserReg(user_reg: *const WCHAR, system_reg: *const WCHAR, software_reg: *const WCHAR, 
+            tip_string: *const WCHAR, flags: c_int) -> c_int
     }
 }
 
