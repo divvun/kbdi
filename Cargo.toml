@@ -1,6 +1,6 @@
 [package]
 name = "kbdi"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 publish = false
 
@@ -22,6 +22,7 @@ path = "src/bin/kbdi.rs"
 [dependencies]
 libloading = { git = "https://github.com/nagisa/rust_libloading" }
 lazy_static = "*"
+sentry-rs = "2"
 
 [dependencies.winapi]
 git = "https://github.com/bbqsrc/winapi-rs"
@@ -43,5 +44,4 @@ embed-resource = "1.1"
 
 [profile.release]
 lto = true
-panic = "abort"
 debug = true

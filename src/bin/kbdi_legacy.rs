@@ -60,9 +60,19 @@ fn main() {
             let wants_enable = matches.is_present("enable");
             
             println!("Installing keyboard...");
-            keyboard::install(tag, layout_name, guid, layout_dll, lang_name).unwrap();
+            match keyboard::install(tag, layout_name, guid, layout_dll, lang_name) {
+                Ok(_) => (),
+                Err(err) => {
+                    match err {
+                        keyboard::Error::AlreadyExists => {
+                            println!("Keyboard already installed.");
+                        },
+                        _ => panic!(err)
+                    }
+                }
+            }
             if wants_enable {
-                println!("Enable keyboard...");
+                println!("Enabling keyboard...");
                 keyboard::enable(tag, guid).unwrap();
             }
         },

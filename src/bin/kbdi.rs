@@ -1,8 +1,23 @@
 #[macro_use]
 extern crate clap;
 extern crate kbdi;
+#[macro_use]
+extern crate lazy_static;
+extern crate sentry_rs;
 
 use kbdi::*;
+
+use sentry_rs::models::SentryCredentials;
+use sentry_rs::Sentry;
+
+lazy_static! {
+    static ref SENTRY: Sentry = {
+        let s = Sentry::new("kbdi".to_string(), "0.4.3".to_string(), "release".to_string(),
+            (include_str!("../../dsn.txt")).parse::<SentryCredentials>().unwrap());
+        s.register_panic_handler();
+        s
+    };
+}
 
 fn main() {
     let matches = clap_app!(kbdi =>
@@ -61,9 +76,19 @@ fn main() {
             let wants_enable = matches.is_present("enable");
             
             println!("Installing keyboard...");
-            keyboard::install(tag, layout_name, guid, layout_dll, lang_name).unwrap();
+            match keyboard::install(tag, layout_name, guid, layout_dll, lang_name) {
+                Ok(_) => (),
+                Err(err) => {
+                    match err {
+                        keyboard::Error::AlreadyExists => {
+                            println!("Keyboard already installed.");
+                        },
+                        _ => panic!(err)
+                    }
+                }
+            }
             if wants_enable {
-                println!("Enable keyboard...");
+                println!("Enabling keyboard...");
                 keyboard::enable(tag, guid, lang_name).unwrap();
             }
         },
