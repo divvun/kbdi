@@ -13,7 +13,7 @@ pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
     };
 
     // Generate input list item
-    let lcid = winnls::locale_name_to_lcid(tag).unwrap_or(0x0c00);
+    let lcid = crate::lcid(tag);
     let tip = InputList::from(format!("{:04X}:{}", lcid, record.regkey_id()));
 
     info!("D: Install layout, flag 0");

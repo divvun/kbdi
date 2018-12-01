@@ -77,8 +77,9 @@ pub fn get_language_names(tag: &str) -> Option<LanguageData> {
 }
 
 pub fn set_user_languages(tags: &[String]) -> Result<(), io::Error> {
+    info!("Set user languages: {:?}", &tags);
     let handle = HString::from(tags.join(";"));
-    let ret = unsafe { sys::winlangdb::SetUserLanguages(';' as c_char, *handle) };
+    let ret = unsafe { sys::winlangdb::SetUserLanguages(';' as u16, *handle) };
     
     if ret < 0 {
         return Err(io::Error::last_os_error());

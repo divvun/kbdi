@@ -20,6 +20,11 @@ mod win7;
 #[cfg(feature = "legacy")]
 pub use self::win7::*;
 
+pub fn lcid(tag: &str) -> u32 {
+    crate::platform::winnls::locale_name_to_lcid(&tag)
+        .map(|x| if x == 0x1000 { 0x2000 } else { x })
+        .unwrap_or(0x2000)
+}
 // #[test]
 // fn test_sub_id() {
 //     info!("sub_id: {:08x}", next_substitute_id(0xabcd));

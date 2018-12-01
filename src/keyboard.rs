@@ -235,11 +235,10 @@ impl KeyboardRegKey {
         layout_file: &str,
         layout_name: &str
     ) -> KeyboardRegKey {
-        info!("D: Locale name to lcid");
-        let lcid = format!("{:04x}", winnls::locale_name_to_lcid(&tag)
-                .unwrap_or(0x0c00) as u16);
+        info!("Locale name to lcid");
+        let lcid = format!("{:04x}", crate::lcid(&tag) as u16);
 
-        info!("D: Using lcid '{}'", lcid);
+        info!("Using lcid '{}'", lcid);
 
         info!("D: Get first available reg ids");
         let key_name = first_available_keyboard_regkey_id(&lcid);

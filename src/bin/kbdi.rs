@@ -62,21 +62,24 @@ fn main() {
             let tag = matches.value_of("TAG").unwrap();
             let guid = matches.value_of("GUID").unwrap();
             let wants_enable = matches.is_present("enable");
+
+            // println!("Enabling language...");
+            // enable_language(tag).unwrap();
             
-            info!("Installing keyboard...");
+            println!("Installing keyboard...");
             match keyboard::install(tag, layout_name, guid, layout_dll, lang_name) {
                 Ok(_) => (),
                 Err(err) => {
                     match err {
                         keyboard::Error::AlreadyExists => {
-                            info!("Keyboard already installed.");
+                            println!("Keyboard already installed.");
                         },
                         _ => panic!(err)
                     }
                 }
             }
             if wants_enable {
-                info!("Enabling keyboard...");
+                println!("Enabling keyboard...");
                 keyboard::enable(tag, guid, lang_name).unwrap();
             }
         },

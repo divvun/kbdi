@@ -6,7 +6,7 @@ use crate::winrust::hstring::*;
 pub fn get_user_languages() -> Result<Vec<String>, io::Error> {
     let handle = unsafe {
         let mut hstring = HString::null();
-        let ret = sys::bcp47langs::GetUserLanguages(';' as i8, &mut *hstring);
+        let ret = sys::bcp47langs::GetUserLanguages(';' as u16, &mut *hstring);
         if ret < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -22,7 +22,7 @@ pub fn get_user_language_input_methods(tag: &str) -> Result<Vec<String>, io::Err
 
     let handle = unsafe {
         let mut hstring = HString::null();
-        let ret = sys::bcp47langs::GetUserLanguageInputMethods(wtag.as_ptr(), ';' as i8, &mut *hstring);
+        let ret = sys::bcp47langs::GetUserLanguageInputMethods(wtag.as_ptr(), ';' as u16, &mut *hstring);
         if ret < 0 {
             return Err(io::Error::last_os_error());
         }

@@ -47,6 +47,7 @@ pub fn enable_language(tag: &str) -> Result<(), io::Error> {
     langs.push(lang);
 
     set_user_languages(&langs).unwrap();
+    winlangdb::ensure_language_profile_exists()?;
     //    .or_else(|_| Err("Error while setting languages.".to_owned()))
     Ok(())
 }

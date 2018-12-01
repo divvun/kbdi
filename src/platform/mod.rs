@@ -13,10 +13,13 @@ pub mod input {
     use crate::winrust::to_wide_string;
 
     pub fn install_layout(inputs: InputList, flag: i32) -> Result<(), io::Error> {
+        info!("Input list: {:?}", &inputs);
         let input_string = String::from(inputs);
+        info!("Input string: {}", &input_string);
         let winput = to_wide_string(&input_string);
 
-        let ret = unsafe { sys::input::InstallLayoutOrTipUserReg(null(), null(), null(), winput.as_ptr(), flag) };
+        // let ret = unsafe { sys::input::InstallLayoutOrTipUserReg(null(), null(), null(), winput.as_ptr(), flag) };
+        let ret = unsafe { sys::input::InstallLayoutOrTip(winput.as_ptr(), flag) };
         if ret < 0 {
             return Err(io::Error::last_os_error())
         }
