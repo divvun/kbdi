@@ -20,12 +20,12 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     };
 
     // Check language is enabled or LCID check will fail
-    println!("D: Enabling language by tag");
+    info!("D: Enabling language by tag");
     crate::enable_language(tag).unwrap();
 
     // Set human visible language in dropdown
     if let Some(lang) = lang_name {
-         println!("D: Setting cached language name");
+         info!("D: Setting cached language name");
 
          if let Some(mut lrk) = LanguageRegKey::find_by_tag(tag) {
              lrk.set_language_name(lang);
@@ -33,17 +33,16 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     }
     
     // Generate input list item
-    println!("D: Get LCID from tag");
+    info!("D: Get LCID from tag");
     let lcid = bcp47langs::lcid_from_bcp47(tag).unwrap();
     let tip = InputList::from(format!("{:04X}:{}", lcid, record.regkey_id()));
 
-    println!("D: Install layout, flag 0");
+    info!("D: Install layout, flag 0");
     input::install_layout(tip, 0).unwrap();
 
     Ok(())
 }
 
-#[cfg(not(feature = "legacy"))]
 pub fn remove_invalid_kbids() {
     let installed_imes: Vec<String> = KeyboardRegKey::installed().iter()
         .map(|x| x.regkey_id().to_owned())

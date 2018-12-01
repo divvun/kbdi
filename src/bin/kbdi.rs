@@ -1,7 +1,11 @@
+#[macro_use]
+extern crate log;
+
 use kbdi::*;
 use clap::{clap_app, crate_version};
 
 fn main() {
+    env_logger::init();
     let _guard = sentry::init(include_str!("../../dsn.txt"));
 
     let matches = clap_app!(kbdi =>
@@ -59,20 +63,20 @@ fn main() {
             let guid = matches.value_of("GUID").unwrap();
             let wants_enable = matches.is_present("enable");
             
-            println!("Installing keyboard...");
+            info!("Installing keyboard...");
             match keyboard::install(tag, layout_name, guid, layout_dll, lang_name) {
                 Ok(_) => (),
                 Err(err) => {
                     match err {
                         keyboard::Error::AlreadyExists => {
-                            println!("Keyboard already installed.");
+                            info!("Keyboard already installed.");
                         },
                         _ => panic!(err)
                     }
                 }
             }
             if wants_enable {
-                println!("Enabling keyboard...");
+                info!("Enabling keyboard...");
                 keyboard::enable(tag, guid, lang_name).unwrap();
             }
         },

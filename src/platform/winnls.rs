@@ -19,7 +19,7 @@ pub fn resolve_locale_name(tag: &str) -> Option<String> {
     
     if ret == 0 {
         let err = io::Error::last_os_error();
-        println!("{:?}", err);
+        info!("{:?}", err);
         panic!();
     }
 

@@ -21,6 +21,8 @@ doc = false
 path = "src/bin/kbdi.rs"
 
 [dependencies]
+log = "*"
+env_logger = "*"
 libloading = "0.5.0"
 lazy_static = "1.2.0"
 sentry = "0.12.0"

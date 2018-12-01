@@ -16,9 +16,9 @@ pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
     let lcid = winnls::locale_name_to_lcid(tag).unwrap_or(0x0c00);
     let tip = InputList::from(format!("{:04X}:{}", lcid, record.regkey_id()));
 
-    println!("D: Install layout, flag 0");
+    info!("D: Install layout, flag 0");
     input::install_layout(tip, 0x0).unwrap();
-    // println!("D: Enable keyboard layout");
+    // info!("D: Enable keyboard layout");
     // winuser::load_keyboard_layout(record.regkey_id());
     Ok(())
 }

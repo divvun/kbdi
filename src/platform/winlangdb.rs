@@ -63,7 +63,7 @@ pub fn get_language_names(tag: &str) -> Option<LanguageData> {
     };
 
     if ret < 0 {
-        println!("{:?}", io::Error::last_os_error());
+        info!("{:?}", io::Error::last_os_error());
         return None;
     }
 

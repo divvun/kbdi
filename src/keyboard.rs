@@ -32,12 +32,12 @@ pub fn install(
     layout_file: &str,
     display_name: Option<&str>
 ) -> Result<(), Error> {
-    println!("D: Checking if already installed");
+    info!("D: Checking if already installed");
     if let Some(_) = KeyboardRegKey::find_by_product_code(product_code) {
         return Err(Error::AlreadyExists);
     }
 
-    println!("D: Checking language name is valid");
+    info!("D: Checking language name is valid");
     let lang_name = match display_name {
         Some(v) => v.to_owned(),
         #[cfg(not(feature = "legacy"))]
@@ -46,7 +46,7 @@ pub fn install(
         None => layout_name.to_owned()
     };
 
-    println!("D: Creating registry key");
+    info!("D: Creating registry key");
     KeyboardRegKey::create(tag, &lang_name, product_code, layout_file, layout_name);
     Ok(())
 }
@@ -235,22 +235,22 @@ impl KeyboardRegKey {
         layout_file: &str,
         layout_name: &str
     ) -> KeyboardRegKey {
-        println!("D: Locale name to lcid");
+        info!("D: Locale name to lcid");
         let lcid = format!("{:04x}", winnls::locale_name_to_lcid(&tag)
                 .unwrap_or(0x0c00) as u16);
 
-        println!("D: Using lcid '{}'", lcid);
+        info!("D: Using lcid '{}'", lcid);
 
-        println!("D: Get first available reg ids");
+        info!("D: Get first available reg ids");
         let key_name = first_available_keyboard_regkey_id(&lcid);
         let layout_id = first_available_layout_id();
 
-        println!("D: open regkey");
+        info!("D: open regkey");
         let (regkey, _) = keyboard_layouts_regkey()
                 .create_subkey_with_flags(&key_name, KEY_READ | KEY_WRITE)
                 .unwrap();
 
-        println!("D: set regkey vals");
+        info!("D: set regkey vals");
         regkey.set_value("Custom Language Display Name",
             &format!("@%SystemRoot%\\system32\\{},-1100", &layout_file).to_string()).unwrap();
         regkey.set_value("Custom Language Name", &display_name).unwrap();

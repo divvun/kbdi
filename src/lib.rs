@@ -1,8 +1,4 @@
-// extern crate winapi;
-// extern crate winreg;
-// extern crate libloading;
-// #[macro_use]
-// extern crate lazy_static;
+#[macro_use] extern crate log;
 
 mod types;
 mod winrust;
@@ -26,15 +22,15 @@ pub use self::win7::*;
 
 // #[test]
 // fn test_sub_id() {
-//     println!("sub_id: {:08x}", next_substitute_id(0xabcd));
-//     println!("sub_id: {:08x}", next_substitute_id(0x0c09));
+//     info!("sub_id: {:08x}", next_substitute_id(0xabcd));
+//     info!("sub_id: {:08x}", next_substitute_id(0x0c09));
 // }
 
 // #[test]
 // fn test_it_doth_work() {
 //     let v = LanguageRegKey::next_transient_lang_id();
 
-//     println!("Transient id: {:04x}", v);
+//     info!("Transient id: {:04x}", v);
 // }
 
 // #[test]
