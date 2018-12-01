@@ -1,12 +1,13 @@
 use winreg::*;
 use winreg::enums::*;
 
-fn user_profile() -> RegKey {
-    RegKey::predef(HKEY_CURRENT_USER)
-            .open_subkey_with_flags("Control Panel\\International\\User Profile", KEY_READ | KEY_WRITE)
-            .unwrap()
-}
+// fn user_profile() -> RegKey {
+//     RegKey::predef(HKEY_CURRENT_USER)
+//             .open_subkey_with_flags("Control Panel\\International\\User Profile", KEY_READ | KEY_WRITE)
+//             .unwrap()
+// }
 
+#[allow(dead_code)]
 pub struct LanguageRegKey {
     id: String,
     regkey: RegKey

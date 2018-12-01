@@ -6,10 +6,11 @@ pub mod winnls;
 pub mod sys;
 
 pub mod input {
-    use crate::*;
+    use super::*;
     use std::io;
     use crate::types::InputList;
     use std::ptr::null;
+    use crate::winrust::to_wide_string;
 
     pub fn install_layout(inputs: InputList, flag: i32) -> Result<(), io::Error> {
         let input_string = String::from(inputs);
@@ -25,10 +26,8 @@ pub mod input {
 }
 
 pub mod winuser {
-    use crate::*;
-    use crate::winrust::*;
     use winapi::um::winuser;
-    use winapi::shared::minwindef::HKL;
+    use crate::winrust::to_wide_string;
 
     pub fn load_keyboard_layout(klid: &str) {
         unsafe { winuser::LoadKeyboardLayoutW(to_wide_string(klid).as_ptr(), 

@@ -2,9 +2,9 @@ use winreg::RegKey;
 use winreg::enums::{
     HKEY_CURRENT_USER, HKEY_USERS, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE
 };
-use keyboard::{Error, KeyboardRegKey};
-use types::*;
-use platform::*;
+use crate::keyboard::{Error, KeyboardRegKey};
+use crate::types::*;
+use crate::platform::*;
 
 pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
     let record = match KeyboardRegKey::find_by_product_code(product_code) {

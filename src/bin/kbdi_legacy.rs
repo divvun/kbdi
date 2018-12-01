@@ -1,8 +1,5 @@
-#[macro_use]
-extern crate clap;
-extern crate kbdi;
-
 use kbdi::*;
+use clap::{clap_app, crate_version};
 
 fn main() {
     let matches = clap_app!(kbdi =>

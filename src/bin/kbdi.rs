@@ -1,11 +1,5 @@
-#[macro_use]
-extern crate clap;
-extern crate kbdi;
-#[macro_use]
-extern crate lazy_static;
-extern crate sentry;
-
 use kbdi::*;
+use clap::{clap_app, crate_version};
 
 fn main() {
     let _guard = sentry::init(include_str!("../../dsn.txt"));

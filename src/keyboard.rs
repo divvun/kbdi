@@ -5,13 +5,13 @@ use winreg::enums::{
 };
 use crate::platform::*;
 use std::fmt;
-use crate::types::*;
 use std::path::Path;
+use crate::types::InputList;
 
 #[cfg(not(feature = "legacy"))]
 pub use crate::keyboard_win8::*;
 #[cfg(feature = "legacy")]
-pub use keyboard_legacy::*;
+pub use crate::keyboard_legacy::*;
 
 pub struct KeyboardRegKey {
     id: String,

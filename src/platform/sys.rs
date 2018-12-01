@@ -16,6 +16,7 @@ pub mod bcp47langs {
     use winapi::ctypes::{c_char, c_int};
     use winapi::um::winnt::WCHAR;
     use libloading::os::windows::*;
+    use lazy_static::lazy_static;
 
     lazy_static! {
         static ref LIB: Library = Library::new(r"C:\Windows\System32\BCP47Langs.dll").unwrap();
@@ -33,6 +34,7 @@ pub mod input {
     use winapi::ctypes::*;
     use winapi::um::winnt::WCHAR;
     use libloading::os::windows::*;
+    use lazy_static::lazy_static;
 
     lazy_static! {
         static ref LIB: Library = Library::new(r"C:\Windows\System32\input.dll").unwrap();
@@ -51,6 +53,7 @@ pub mod winlangdb {
     use winapi::um::winnt::WCHAR;
     use winapi::winrt::hstring::HSTRING;
     use libloading::os::windows::*;
+    use lazy_static::lazy_static;
 
     lazy_static! {
         static ref LIB: Library = Library::new(r"C:\Windows\System32\winlangdb.dll").unwrap();
