@@ -27,7 +27,7 @@ sentry = "0.12.0"
 winapi = { version = "0.3", features = ["everything"] }
 
 [dependencies.winreg]
-version = "0.4"
+version = "0.6"
 default-features = false
 features = []
 

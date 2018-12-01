@@ -246,7 +246,7 @@ impl KeyboardRegKey {
         let layout_id = first_available_layout_id();
 
         println!("D: open regkey");
-        let regkey = keyboard_layouts_regkey()
+        let (regkey, _) = keyboard_layouts_regkey()
                 .create_subkey_with_flags(&key_name, KEY_READ | KEY_WRITE)
                 .unwrap();
 
