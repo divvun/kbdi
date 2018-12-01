@@ -3,13 +3,13 @@ use winreg::RegKey;
 use winreg::enums::{
     HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE
 };
-use platform::*;
+use crate::platform::*;
 use std::fmt;
-use types::*;
+use crate::types::*;
 use std::path::Path;
 
 #[cfg(not(feature = "legacy"))]
-pub use keyboard_win8::*;
+pub use crate::keyboard_win8::*;
 #[cfg(feature = "legacy")]
 pub use keyboard_legacy::*;
 
@@ -67,7 +67,7 @@ fn delete_keyboard_regkey(record: KeyboardRegKey) -> Result<(), Error> {
 pub fn uninstall(product_code: &str) -> Result<(), Error> {
     if let Some(record) = KeyboardRegKey::find_by_product_code(product_code) {
         delete_keyboard_regkey(record)?;
-        ::clean().unwrap();
+        crate::clean().unwrap();
         return Ok(());
     }
 

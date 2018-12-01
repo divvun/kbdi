@@ -1,10 +1,10 @@
-use platform::*;
-use types::*;
-use keyboard::{Error, KeyboardRegKey};
-use language::LanguageRegKey;
+use crate::platform::*;
+use crate::types::*;
+use crate::keyboard::{Error, KeyboardRegKey};
+use crate::language::LanguageRegKey;
 
 fn enabled_input_methods() -> InputList {
-    let langs = ::enabled_languages().unwrap();
+    let langs = crate::enabled_languages().unwrap();
     let mut imes: Vec<String> = vec![];
     for lang in langs {
         imes.append(&mut bcp47langs::get_user_language_input_methods(&lang)
@@ -21,7 +21,7 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
 
     // Check language is enabled or LCID check will fail
     println!("D: Enabling language by tag");
-    ::enable_language(tag).unwrap();
+    crate::enable_language(tag).unwrap();
 
     // Set human visible language in dropdown
     if let Some(lang) = lang_name {

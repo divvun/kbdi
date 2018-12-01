@@ -1,7 +1,7 @@
-use platform::*;
+use crate::platform::*;
 use std::io;
-use winrust::*;
-use winrust::hstring::*;
+use crate::winrust::*;
+use crate::winrust::hstring::*;
 
 pub fn get_user_languages() -> Result<Vec<String>, io::Error> {
     let handle = unsafe {

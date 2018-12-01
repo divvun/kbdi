@@ -6,9 +6,9 @@ pub mod winnls;
 pub mod sys;
 
 pub mod input {
-    use ::*;
+    use crate::*;
     use std::io;
-    use types::InputList;
+    use crate::types::InputList;
     use std::ptr::null;
 
     pub fn install_layout(inputs: InputList, flag: i32) -> Result<(), io::Error> {
@@ -25,8 +25,8 @@ pub mod input {
 }
 
 pub mod winuser {
-    use ::*;
-    use winrust::*;
+    use crate::*;
+    use crate::winrust::*;
     use winapi::um::winuser;
     use winapi::shared::minwindef::HKL;
 

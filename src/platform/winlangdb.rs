@@ -1,10 +1,10 @@
-use platform::*;
+use crate::platform::*;
 use std::io;
 use std::fmt;
-use types::*;
+use crate::types::*;
 use winapi::ctypes::c_char;    
-use winrust::*;
-use winrust::hstring::*;
+use crate::winrust::*;
+use crate::winrust::hstring::*;
 
 pub struct LanguageData {
     pub tag: String,

@@ -5,8 +5,8 @@ extern crate libloading;
 extern crate lazy_static;
 
 use std::io;
-use winrust::*;
-use platform::*;
+use crate::winrust::*;
+use crate::platform::*;
 
 mod types;
 mod winrust;

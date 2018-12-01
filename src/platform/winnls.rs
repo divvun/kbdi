@@ -1,7 +1,7 @@
 use std::io;
 use winapi::ctypes::c_int;
 use winapi::um::winnls as sys_winnls;
-use winrust::{from_wide_string, to_wide_string};
+use crate::winrust::{from_wide_string, to_wide_string};
 
 const MAX_LOCALE_NAME_LEN: usize = 85usize;
 

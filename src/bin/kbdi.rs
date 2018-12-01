@@ -3,24 +3,12 @@ extern crate clap;
 extern crate kbdi;
 #[macro_use]
 extern crate lazy_static;
-extern crate sentry_rs;
+extern crate sentry;
 
 use kbdi::*;
 
-use sentry_rs::models::SentryCredentials;
-use sentry_rs::Sentry;
-
-lazy_static! {
-    static ref SENTRY: Sentry = {
-        let s = Sentry::new("kbdi".to_string(), "0.4.3".to_string(), "release".to_string(),
-            (include_str!("../../dsn.txt")).parse::<SentryCredentials>().unwrap());
-        s.register_panic_handler();
-        s
-    };
-}
-
 fn main() {
-    let _ = &SENTRY;
+    let _guard = sentry::init(include_str!("../../dsn.txt"));
 
     let matches = clap_app!(kbdi =>
         (@setting SubcommandRequiredElseHelp)
