@@ -24,3 +24,12 @@ SUBCOMMANDS:
     language_list         Lists all languages enabled for the current user
     language_query        Get data about language tag
 ```
+
+## Building
+
+This should always be built for the `i686-pc-windows-msvc` target. The `crt-static` flag must be applied to staticly link the C runtime.
+
+```
+cargo build --release --target i686-pc-windows-msvc --bin kbdi
+cargo build --release --target i686-pc-windows-msvc --features legacy --bin kbdi-legacy
+```
