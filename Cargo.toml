@@ -2,6 +2,7 @@
 name = "kbdi"
 version = "0.4.3"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+license = "Apache-2.0 OR MIT"
 publish = false
 edition = "2018"
 
