@@ -1,12 +1,10 @@
 use std::io;
-use winreg::RegKey;
-use winreg::enums::{
-    HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE
-};
 use crate::platform::*;
+use registry::{Hive, RegKey, Security, Data};
 use std::fmt;
 use std::path::Path;
 use crate::types::InputList;
+use std::convert::TryInto;
 
 #[cfg(not(feature = "legacy"))]
 pub use crate::keyboard_win8::*;
@@ -22,7 +20,8 @@ pub struct KeyboardRegKey {
 pub enum Error {
     AlreadyExists,
     NotFound,
-    IoError(io::Error)
+    IoError(io::Error),
+    RegErr(registry::key::Error),
 }
 
 pub fn install(
@@ -58,9 +57,9 @@ fn enabled_input_methods() -> InputList {
 
 fn delete_keyboard_regkey(record: KeyboardRegKey) -> Result<(), Error> {
     let klrk = keyboard_layouts_regkey();
-    match klrk.delete_subkey_all(record.regkey_id()) {
+    match klrk.delete(record.regkey_id(), true) {
         Ok(_) => Ok(()),
-        Err(e) => Err(Error::IoError(e))
+        Err(e) => Err(Error::RegErr(e))
     }
 }
 
@@ -79,8 +78,8 @@ pub fn installed() -> Vec<KeyboardRegKey> {
 }
 
 fn keyboard_layouts_regkey() -> RegKey {
-    RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey_with_flags(r"SYSTEM\CurrentControlSet\Control\Keyboard Layouts", KEY_READ | KEY_WRITE)
+    Hive::LocalMachine
+        .open(r"SYSTEM\CurrentControlSet\Control\Keyboard Layouts", Security::Read | Security::Write)
         .unwrap()
 }
 
@@ -127,8 +126,8 @@ fn remove_invalid_dlls() {
 
 fn first_available_keyboard_regkey_id(lcid: &str) -> String {
     let regkey = keyboard_layouts_regkey();
-    let mut kbd_keys: Vec<u16> = regkey.enum_keys()
-        .map(|x| x.unwrap())
+    let mut kbd_keys: Vec<u16> = regkey.keys()
+        .map(|x| x.unwrap().to_string())
         .filter(|x| x.starts_with(&"a") && x.ends_with(&lcid))
         .map(|x| {
             let n = u32::from_str_radix(&x, 16).unwrap_or(0u32);
@@ -147,11 +146,14 @@ fn first_available_keyboard_regkey_id(lcid: &str) -> String {
 
 fn first_available_layout_id() -> String {
     let regkey = keyboard_layouts_regkey();
-    let kbd_keys: Vec<String> = regkey.enum_keys().map(|x| x.unwrap()).collect();
+    let kbd_keys: Vec<String> = regkey.keys().map(|x| x.unwrap().to_string()).collect();
 
     let mut layout_ids: Vec<u32> = kbd_keys.into_iter().map(|key| {
-        let kbdkey = &regkey.open_subkey_with_flags(key, KEY_READ | KEY_WRITE).unwrap();
-        let layout_idstr: String = kbdkey.get_value("Layout Id").unwrap_or("0".to_string());
+        let kbdkey = &regkey.open(key, Security::Read | Security::Write).unwrap();
+        let layout_idstr: String = match kbdkey.value("Layout Id") {
+            Ok(Data::String(v)) => v.to_string_lossy(),
+            _ => "0".to_string(),
+        };
 
         u32::from_str_radix(&layout_idstr, 16).unwrap_or(0u32)
     }).collect();
@@ -164,26 +166,28 @@ fn first_available_layout_id() -> String {
 impl KeyboardRegKey {
     pub fn find_by_product_code(product_code: &str) -> Option<KeyboardRegKey> {
         let regkey = keyboard_layouts_regkey();
-        let keys: Vec<String> = regkey.enum_keys().map(|x| x.unwrap()).collect();
+        let keys: Vec<String> = regkey.keys().map(|x| x.unwrap().to_string()).collect();
         for key in keys.into_iter() {
-            let kl_key = regkey.open_subkey_with_flags(&key, KEY_READ | KEY_WRITE).unwrap();
-            let ret: Result<String, io::Error> = kl_key.get_value("Layout Product Code");
-            if let Ok(v) = ret {
-                if v == product_code {
-                    return Some(KeyboardRegKey { id: key.clone(), regkey: kl_key })
-                }
+            let kl_key = regkey.open(&key, Security::Read | Security::Write).unwrap();
+            let ret: Result<Data, registry::value::Error> = kl_key.value("Layout Product Code");
+            match ret {
+                Ok(Data::String(s)) if s.to_string_lossy() == product_code => {
+                    return Some(KeyboardRegKey { id: key.clone(), regkey: kl_key})
+                },
+                _ => continue,
             }
         }
+
         None
     }
 
     pub fn installed() -> Vec<KeyboardRegKey> {
         let regkey = keyboard_layouts_regkey();
-        regkey.enum_keys()
-            .map(|x| x.unwrap())
+        regkey.keys()
+            .map(|x| x.unwrap().to_string())
             .filter(|x| x.starts_with("a"))
             .map(|x| {
-                let k = regkey.open_subkey_with_flags(&x, KEY_READ | KEY_WRITE).unwrap();
+                let k = regkey.open(&x, Security::Read | Security::Write).unwrap();
                 KeyboardRegKey { id: x.to_owned(), regkey: k }
             })
             .collect()
@@ -194,37 +198,37 @@ impl KeyboardRegKey {
     }
 
     pub fn id(&self) -> Option<String> {
-        match self.regkey.get_value("Layout Id") {
-            Ok(v) => Some(v),
-            Err(_) => None
+        match self.regkey.value("Layout Id") {
+            Ok(Data::String(v)) => Some(v.to_string_lossy()),
+            _ => None
         }
     }
 
     pub fn product_code(&self) -> Option<String> {
-        match self.regkey.get_value("Layout Product Code") {
-            Ok(v) => Some(v),
-            Err(_) => None
+        match self.regkey.value("Layout Product Code") {
+            Ok(Data::String(v)) => Some(v.to_string_lossy()),
+            _ => None
         }
     }
     
     pub fn language_name(&self) -> Option<String> {
-        match self.regkey.get_value("Custom Language Name") {
-            Ok(v) => Some(v),
-            Err(_) => None
+        match self.regkey.value("Custom Language Name") {
+            Ok(Data::String(v)) => Some(v.to_string_lossy()),
+            _ => None
         }
     }
 
     pub fn layout_file(&self) -> Option<String> {
-        match self.regkey.get_value("Layout File") {
-            Ok(v) => Some(v),
-            Err(_) => None
+        match self.regkey.value("Layout File") {
+            Ok(Data::String(v)) => Some(v.to_string_lossy()),
+            _ => None
         }
     }
 
     pub fn layout_name(&self) -> Option<String> {
-        match self.regkey.get_value("Layout Text") {
-            Ok(v) => Some(v),
-            Err(_) => None
+        match self.regkey.value("Layout Text") {
+            Ok(Data::String(v)) => Some(v.to_string_lossy()),
+            _ => None
         }
     }
 
@@ -245,21 +249,21 @@ impl KeyboardRegKey {
         let layout_id = first_available_layout_id();
 
         info!("D: open regkey");
-        let (regkey, _) = keyboard_layouts_regkey()
-                .create_subkey_with_flags(&key_name, KEY_READ | KEY_WRITE)
+        let regkey = keyboard_layouts_regkey()
+                .create(&key_name, Security::Read | Security::Write)
                 .unwrap();
 
         info!("D: set regkey vals");
         regkey.set_value("Custom Language Display Name",
-            &format!("@%SystemRoot%\\system32\\{},-1100", &layout_file).to_string()).unwrap();
-        regkey.set_value("Custom Language Name", &display_name).unwrap();
-        regkey.set_value("Layout Display Name", 
-            &format!("@%SystemRoot%\\system32\\{},-1000", &layout_file).to_string()).unwrap();
-        regkey.set_value("Layout File", &layout_file).unwrap();
-        regkey.set_value("Layout Id", &layout_id).unwrap();
-        regkey.set_value("Layout Locale Name", &tag).unwrap();
-        regkey.set_value("Layout Product Code", &product_code).unwrap();
-        regkey.set_value("Layout Text", &layout_name).unwrap();
+            &Data::String(format!("@%SystemRoot%\\system32\\{},-1100", &layout_file).try_into().unwrap())).unwrap();
+        regkey.set_value("Custom Language Name", &Data::String(display_name.try_into().unwrap())).unwrap();
+        regkey.set_value("Layout Display Name",
+            &Data::String(format!("@%SystemRoot%\\system32\\{},-1000", &layout_file).try_into().unwrap())).unwrap();
+        regkey.set_value("Layout File", &Data::String(layout_file.try_into().unwrap())).unwrap();
+        regkey.set_value("Layout Id", &Data::String(layout_id.try_into().unwrap())).unwrap();
+        regkey.set_value("Layout Locale Name", &Data::String(tag.try_into().unwrap())).unwrap();
+        regkey.set_value("Layout Product Code", &Data::String(product_code.try_into().unwrap())).unwrap();
+        regkey.set_value("Layout Text", &Data::String(layout_name.try_into().unwrap())).unwrap();
 
         KeyboardRegKey { id: key_name.clone(), regkey: regkey }
     }
