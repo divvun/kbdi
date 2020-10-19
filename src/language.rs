@@ -1,5 +1,5 @@
-use winreg::*;
-use winreg::enums::*;
+use registry::{RegKey, Data, Security, Hive};
+use std::convert::TryInto;
 
 // fn user_profile() -> RegKey {
 //     RegKey::predef(HKEY_CURRENT_USER)
@@ -50,7 +50,7 @@ impl LanguageRegKey {
     // }
 
     pub fn set_language_name(&mut self, name: &str) {
-        self.regkey.set_value("CachedLanguageName", &name).unwrap();
+        self.regkey.set_value("CachedLanguageName", &Data::String(name.try_into().unwrap())).unwrap();
     }
 
     // fn language_name(&self) -> Option<String> {
@@ -117,8 +117,8 @@ impl LanguageRegKey {
     // }
 
     pub fn find_by_tag(tag: &str) -> Option<LanguageRegKey> {
-        let maybe_regkey = RegKey::predef(HKEY_CURRENT_USER)
-            .open_subkey_with_flags(format!(r"Control Panel\International\User Profile\{}", &tag), KEY_READ | KEY_WRITE);
+        let maybe_regkey = Hive::CurrentUser
+            .open(format!(r"Control Panel\International\User Profile\{}", &tag), Security::Read | Security::Write);
 
         if let Ok(regkey) = maybe_regkey {
             Some(LanguageRegKey { id: tag.to_owned(), regkey: regkey })
