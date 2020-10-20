@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct InputList {
     __inner: Vec<InputListItem>
@@ -5,20 +7,21 @@ pub struct InputList {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct InputListItem {
-    lang_id: u16,
-    tip_id: u32
+    pub lang_id: u16,
+    pub tip_id: u32
 }
 
 use std::u16;
 use std::u32;
 
-impl InputListItem {
-    fn try_from(string: &str) -> Result<InputListItem, &'static str> {
+impl TryFrom<&str> for InputListItem {
+    type Error = ();
+
+    fn try_from(string: &str) -> Result<InputListItem, ()> {
         debug!("InputListItem try_from: {}", &string);
 
-        
-        let lang_id = u16::from_str_radix(&string[0..4], 16).unwrap();
-        let tip_id = u32::from_str_radix(&string[5..13], 16).unwrap();
+        let lang_id = u16::from_str_radix(&string[0..4], 16).map_err(|_| ())?;
+        let tip_id = u32::from_str_radix(&string[5..13], 16).map_err(|_| ())?;
 
         Ok(InputListItem {
             lang_id,
@@ -27,23 +30,27 @@ impl InputListItem {
     }
 }
 
-impl From<String> for InputList {
-    fn from(string: String) -> InputList {
-        InputList {
+impl TryFrom<String> for InputList {
+    type Error = ();
+
+    fn try_from(string: String) -> Result<InputList, ()> {
+        Ok(InputList {
             __inner: string.split(";")
-                .map(|s| InputListItem::try_from(s).unwrap())
-                .collect()
-        }
+                .map(|s| InputListItem::try_from(s))
+                .collect::<Result<Vec<_>, _>>()?
+        })
     }
 }
 
-impl From<Vec<String>> for InputList {
-    fn from(str_vec: Vec<String>) -> InputList {
-        InputList {
+impl TryFrom<Vec<String>> for InputList {
+    type Error = ();
+
+    fn try_from(str_vec: Vec<String>) -> Result<InputList, ()> {
+        Ok(InputList {
             __inner: str_vec.into_iter()
-                .map(|s| InputListItem::try_from(&s).unwrap())
-                .collect()
-        }
+                .map(|s| InputListItem::try_from(&*s))
+                .collect::<Result<Vec<_>, _>>()?
+        })
     }
 }
 

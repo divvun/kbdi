@@ -1,8 +1,7 @@
 use crate::platform::*;
-use std::io;
+use std::{convert::TryFrom, io};
 use std::fmt;
-use crate::types::*;
-use winapi::ctypes::c_char;    
+use crate::types::*;   
 use crate::winrust::*;
 use crate::winrust::hstring::*;
 
@@ -96,7 +95,7 @@ pub fn transform_input_methods(methods: InputList, tag: &str) -> InputList {
         sys::winlangdb::TransformInputMethodsForLanguage(*hmethods, *htag, &mut *out);
         out
     };
-    InputList::from(String::from(out))
+    InputList::try_from(String::from(out)).unwrap()
 }
 
 pub fn default_input_method(tag: &str) -> InputList {
@@ -106,5 +105,5 @@ pub fn default_input_method(tag: &str) -> InputList {
         sys::winlangdb::GetDefaultInputMethodForLanguage(*htag, &mut *out);
         out
     };
-    InputList::from(String::from(out))
+    InputList::try_from(String::from(out)).unwrap()
 }

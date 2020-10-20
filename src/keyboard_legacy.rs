@@ -11,7 +11,7 @@ pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
 
     // Generate input list item
     let lcid = crate::lcid(tag);
-    let tip = InputList::from(format!("{:04X}:{}", lcid, record.regkey_id()));
+    let tip = InputList::try_from(format!("{:04X}:{}", lcid, record.regkey_id())).unwrap();
 
     info!("D: Install layout, flag 0");
     input::install_layout(tip, 0x0).unwrap();
