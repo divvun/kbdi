@@ -6,7 +6,8 @@ use clap::{clap_app, crate_version};
 
 fn main() {
     env_logger::init();
-    let _guard = sentry::init(include_str!("../../dsn.txt"));
+    
+    let _guard = option_env!("SENTRY_DSN").map(|var| sentry::init(var));
 
     let matches = clap_app!(kbdi =>
         (@setting SubcommandRequiredElseHelp)
