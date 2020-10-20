@@ -32,6 +32,9 @@ fn main() {
             (@arg GUID: -g +takes_value +required "Product code GUID (eg: {42c3de12-28...})")
             (@arg LANG: -l +takes_value "Native language name, if required (eg: Norsk)")
         )
+        (@subcommand registry_regen =>
+            (about: "Regenerate the keyboard registry")
+        )
         (@subcommand language_enable =>
             (about: "Enable a language with provided tag")
             (@arg TAG: +required "Language tag in BCP 47 format (eg: sma-Latn-NO)")
@@ -93,6 +96,9 @@ fn main() {
             let guid = matches.value_of("GUID").unwrap();
 
             keyboard::enable(tag, guid, lang_name).unwrap();
+        },
+        ("registry_regen", _) => {
+            keyboard::regenerate_registry();
         },
         ("language_enable", Some(matches)) => {
             let tag = matches.value_of("TAG").unwrap();
