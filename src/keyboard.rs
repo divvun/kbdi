@@ -4,7 +4,7 @@ use registry::{Hive, RegKey, Security, Data};
 use std::fmt;
 use std::path::Path;
 use crate::types::InputList;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 #[cfg(not(feature = "legacy"))]
 pub use crate::keyboard_win8::*;
@@ -52,7 +52,7 @@ pub fn install(
 
 #[cfg(feature = "legacy")]
 fn enabled_input_methods() -> InputList {
-    InputList::from("".to_owned())
+    InputList::try_from("".to_owned()).unwrap()
 }
 
 fn delete_keyboard_regkey(record: KeyboardRegKey) -> Result<(), Error> {

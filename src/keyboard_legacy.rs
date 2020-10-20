@@ -2,6 +2,7 @@ use registry::{Hive, Data, RegKey, Security};
 use crate::keyboard::{Error, KeyboardRegKey};
 use crate::types::*;
 use crate::platform::*;
+use std::convert::TryFrom;
 
 pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
     let record = match KeyboardRegKey::find_by_product_code(product_code) {
