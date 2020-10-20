@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - setup-ci
 
 env:
   RUST_VERSION: stable
@@ -26,7 +27,7 @@ jobs:
       id: version
       uses: divvun/actions/version@master
       with:
-        cargo: kbdi/Cargo.toml
+        cargo: Cargo.toml
         nightly: master, develop
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: Install Rust toolchain
@@ -44,7 +45,7 @@ jobs:
         RUSTC_BOOTSTRAP: 1
     - name: Build Legacy Keyboard installer
       run: |
-        cargo build --release --target i686-pc-windows-msvc -features legacy --bin kbdi-legacy
+        cargo build --release --target i686-pc-windows-msvc --features legacy --bin kbdi-legacy
       env:
         RUSTC_BOOTSTRAP: 1
     - name: Create dist
@@ -67,7 +68,7 @@ jobs:
       with:
         path: dist
     - name: Create legacy tarball package
-      id: installer
+      id: installer-legacy
       uses: divvun/actions/create-txz@master
       with:
         path: dist-legacy
@@ -89,7 +90,7 @@ jobs:
         type: TarballPackage
         platform: windows
         version: ${{ steps.version.outputs.version }}
-        payload-path: ${{ steps.installer.outputs['txz-path'] }}
+        payload-path: ${{ steps.installer-legacy.outputs['txz-path'] }}
         repo: https://pahkat.thetc.se/devtools/
         channel: ${{ steps.version.outputs.channel }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
