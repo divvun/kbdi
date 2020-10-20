@@ -1,10 +1,6 @@
-name: kbdi
+name: CI
 
-on:
-  push:
-    branches:
-      - master
-      - setup-ci
+on: [push]
 
 env:
   RUST_VERSION: stable
@@ -27,9 +23,14 @@ jobs:
       id: version
       uses: divvun/actions/version@master
       with:
-        cargo: Cargo.toml
-        nightly: master, develop
+        cargo: true
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install build dependencies
+      uses: divvun/actions/pahkat/init@master
+      with:
+        repo: https://pahkat.uit.no/devtools/
+        channel: nightly
+        packages: pahkat-uploader
     - name: Install Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
@@ -38,12 +39,12 @@ jobs:
         override: true
         components: rustfmt
         target: i686-pc-windows-msvc
-    - name: Build Windows 8.1+ Keyboard installer
+    - name: Build kbdi.exe
       run: |
         cargo build --release --target i686-pc-windows-msvc --bin kbdi
       env:
         RUSTC_BOOTSTRAP: 1
-    - name: Build Legacy Keyboard installer
+    - name: Build kbdi-legacy.exe
       run: |
         cargo build --release --target i686-pc-windows-msvc --features legacy --bin kbdi-legacy
       env:
@@ -63,34 +64,34 @@ jobs:
       with:
         path: dist-legacy/bin/kbdi-legacy.exe
     - name: Create tarball package
-      id: installer
+      id: package
       uses: divvun/actions/create-txz@master
       with:
         path: dist
     - name: Create legacy tarball package
-      id: installer-legacy
+      id: package-legacy
       uses: divvun/actions/create-txz@master
       with:
         path: dist-legacy
-    - name: Deploy
+    - name: Deploy (kbdi)
       uses: divvun/actions/deploy@master
       with:
         package-id: kbdi
         type: TarballPackage
         platform: windows
         version: ${{ steps.version.outputs.version }}
-        payload-path: ${{ steps.installer.outputs['txz-path'] }}
+        payload-path: ${{ steps.package.outputs['txz-path'] }}
         repo: https://pahkat.thetc.se/devtools/
         channel: ${{ steps.version.outputs.channel }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - name: Deploy Legacy
+    - name: Deploy (kbdi-legacy)
       uses: divvun/actions/deploy@master
       with:
         package-id: kbdi-legacy
         type: TarballPackage
         platform: windows
         version: ${{ steps.version.outputs.version }}
-        payload-path: ${{ steps.installer-legacy.outputs['txz-path'] }}
+        payload-path: ${{ steps.package-legacy.outputs['txz-path'] }}
         repo: https://pahkat.thetc.se/devtools/
         channel: ${{ steps.version.outputs.channel }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
