@@ -2,6 +2,8 @@ use crate::platform::*;
 use crate::types::*;
 use crate::keyboard::{Error, KeyboardRegKey};
 use crate::language::LanguageRegKey;
+use std::convert::TryInto;
+use registry::{Hive, RegKey, Data, Security};
 
 fn enabled_input_methods() -> InputList {
     let langs = crate::enabled_languages().unwrap();
@@ -40,6 +42,7 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     info!("D: Install layout, flag 0");
     input::install_layout(tip, 0).unwrap();
 
+    regenerate_registry();
     Ok(())
 }
 
@@ -63,4 +66,27 @@ pub fn remove_invalid_kbids() {
 
     bcp47langs::remove_inputs_for_all_languages().unwrap();
     input::install_layout(InputList::from(filtered_imes), 0).unwrap();
+}
+
+fn regenerate_registry() {
+    let control_panel_langs = Hive::CurrentUser.open(r"Control Panel\International\User Profile", Security::Read).unwrap();
+    let os_langs = Hive::CurrentUser.open(r"Keyboard Layout\Preload", Security::Read | Security::Write).unwrap();
+
+    let lang_keys: Vec<_> = control_panel_langs.keys()
+        .map(|k| k.unwrap().open(Security::Read).unwrap()).collect();
+
+    let keyboard_ids: Vec<_> = lang_keys.iter()
+        .flat_map(|k| k.values())
+        .map(|v| v.unwrap().name().to_string_lossy())
+        .map(|n| n.split(":").last().unwrap().to_string())
+        .collect();
+
+    for value in os_langs.values() {
+        let name = value.unwrap().name().to_owned();
+        os_langs.delete_value(name).unwrap();
+    }
+
+    for (i, keyboard_id) in keyboard_ids.iter().enumerate() {
+        os_langs.set_value((i + 1).to_string(), &Data::String(keyboard_id.try_into().unwrap())).unwrap();
+    }
 }
