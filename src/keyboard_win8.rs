@@ -68,7 +68,7 @@ pub fn remove_invalid_kbids() {
     input::install_layout(InputList::from(filtered_imes), 0).unwrap();
 }
 
-fn regenerate_registry() {
+pub fn regenerate_registry() {
     let control_panel_langs = Hive::CurrentUser.open(r"Control Panel\International\User Profile", Security::Read).unwrap();
     let os_langs = Hive::CurrentUser.open(r"Keyboard Layout\Preload", Security::Read | Security::Write).unwrap();
 
@@ -78,6 +78,7 @@ fn regenerate_registry() {
     let keyboard_ids: Vec<_> = lang_keys.iter()
         .flat_map(|k| k.values())
         .map(|v| v.unwrap().name().to_string_lossy())
+        .filter(|n| n.contains(":"))
         .map(|n| n.split(":").last().unwrap().to_string())
         .collect();
 
