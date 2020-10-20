@@ -2,11 +2,12 @@ use crate::platform::*;
 use crate::types::*;
 use crate::keyboard::{Error, KeyboardRegKey};
 use crate::language::LanguageRegKey;
+use super::bcp47langs;
 use std::convert::{TryFrom, TryInto};
 use registry::{Data, Hive, RegKey, Security};
 
 fn enabled_input_methods() -> InputList {
-    let langs = crate::enabled_languages().unwrap();
+    let langs = super::enabled_languages().unwrap();
     let mut imes: Vec<String> = vec![];
     for lang in langs {
         imes.append(&mut bcp47langs::get_user_language_input_methods(&lang)

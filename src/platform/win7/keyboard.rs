@@ -21,6 +21,10 @@ pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
     Ok(())
 }
 
+// This function is intentionally empty. It is not necessary on legacy windows systems but is exposed here to maintain common api between legacy and non-legacy.
+pub fn remove_invalid_kbids() {
+}
+
 fn base_regkey(is_all_users: bool) -> RegKey {
     match is_all_users {
         true => {
@@ -74,7 +78,6 @@ fn next_substitute_id(suffix: u16) -> u32 {
     ((prefix as u32) << 16) + (suffix as u32)
 }
 
-#[cfg(feature = "legacy")]
 fn next_preload_id(is_all_users: bool) -> u32 {
     base_regkey(is_all_users)
         .open(r"Keyboard Layout\Preload", Security::Read)
