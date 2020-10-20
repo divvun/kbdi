@@ -50,8 +50,9 @@ jobs:
     - name: Create dist
       run: |
         mkdir -p dist/bin
+        mkdir -p dist-legacy/bin
         mv target/i686-pc-windows-msvc/release/kbdi.exe dist/bin/kbdi.exe
-        mv target/i686-pc-windows-msvc/release/kbdi-legacy.exe dist/bin/kbdi-legacy.exe
+        mv target/i686-pc-windows-msvc/release/kbdi-legacy.exe dist-legacy/bin/kbdi-legacy.exe
     - name: Sign code
       uses: divvun/actions/codesign@master
       with:
@@ -59,16 +60,32 @@ jobs:
     - name: Sign legacy code
       uses: divvun/actions/codesign@master
       with:
-        path: dist/bin/kbdi-legacy.exe
+        path: dist-legacy/bin/kbdi-legacy.exe
     - name: Create tarball package
       id: installer
       uses: divvun/actions/create-txz@master
       with:
         path: dist
+    - name: Create legacy tarball package
+      id: installer
+      uses: divvun/actions/create-txz@master
+      with:
+        path: dist-legacy
     - name: Deploy
       uses: divvun/actions/deploy@master
       with:
         package-id: kbdi
+        type: TarballPackage
+        platform: windows
+        version: ${{ steps.version.outputs.version }}
+        payload-path: ${{ steps.installer.outputs['txz-path'] }}
+        repo: https://pahkat.thetc.se/devtools/
+        channel: ${{ steps.version.outputs.channel }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Deploy Legacy
+      uses: divvun/actions/deploy@master
+      with:
+        package-id: kbdi-legacy
         type: TarballPackage
         platform: windows
         version: ${{ steps.version.outputs.version }}
