@@ -85,7 +85,7 @@ fn main() {
             }
             if wants_enable {
                 println!("Enabling keyboard...");
-                keyboard::enable(tag, guid, lang_name).unwrap();
+                keyboard::enable(tag, guid, lang_name, false).unwrap();
             }
         },
         ("keyboard_uninstall", Some(matches)) => {
@@ -99,7 +99,7 @@ fn main() {
             let default_user = matches.is_present("defalt_user");
 
 
-            keyboard::enable(tag, guid, lang_name).unwrap();
+            keyboard::enable(tag, guid, lang_name, default_user).unwrap();
         },
         ("registry_regen", _) => {
             keyboard::regenerate_registry();
