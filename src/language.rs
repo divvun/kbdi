@@ -10,7 +10,7 @@ use std::convert::TryInto;
 #[allow(dead_code)]
 pub struct LanguageRegKey {
     id: String,
-    regkey: RegKey
+    pub(crate) regkey: RegKey
 }
 
 impl LanguageRegKey {

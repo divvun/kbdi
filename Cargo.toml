@@ -28,7 +28,7 @@ libloading = "0.5.0"
 lazy_static = "1.2.0"
 sentry = "0.12.0"
 winapi = { version = "0.3", features = ["everything"] }
-registry = "1.0"
+registry = {git = "https://github.com/bbqsrc/registry-rs",  branch="main"}
 
 [dependencies.clap]
 version = "2.32.0"

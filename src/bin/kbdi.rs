@@ -32,6 +32,7 @@ fn main() {
             (@arg TAG: -t +takes_value +required "Language tag in BCP 47 format (eg: sma-Latn-NO)")
             (@arg GUID: -g +takes_value +required "Product code GUID (eg: {42c3de12-28...})")
             (@arg LANG: -l +takes_value "Native language name, if required (eg: Norsk)")
+            (@arg default_user: -d "Enable keyboard for the default user (requires admin)")
         )
         (@subcommand registry_regen =>
             (about: "Regenerate the keyboard registry")
@@ -95,6 +96,8 @@ fn main() {
             let lang_name = matches.value_of("LANG");
             let tag = matches.value_of("TAG").unwrap();
             let guid = matches.value_of("GUID").unwrap();
+            let default_user = matches.is_present("defalt_user");
+
 
             keyboard::enable(tag, guid, lang_name).unwrap();
         },

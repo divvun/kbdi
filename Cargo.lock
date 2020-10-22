@@ -944,8 +944,7 @@ dependencies = [
 [[package]]
 name = "registry"
 version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0deb51a533810e511877d3289e9ae26d4a69426df12d695b746f52d6a9010d7"
+source = "git+https://github.com/bbqsrc/registry-rs?branch=main#5f4875199d1f6441255cbfa3c012d6e8e57a6242"
 dependencies = [
  "bitflags",
  "log",
