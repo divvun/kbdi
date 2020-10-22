@@ -96,7 +96,7 @@ fn main() {
             let lang_name = matches.value_of("LANG");
             let tag = matches.value_of("TAG").unwrap();
             let guid = matches.value_of("GUID").unwrap();
-            let default_user = matches.is_present("defalt_user");
+            let default_user = matches.is_present("default_user");
 
 
             keyboard::enable(tag, guid, lang_name, default_user).unwrap();
