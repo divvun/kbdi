@@ -3,7 +3,7 @@ use crate::types::*;
 use crate::keyboard::{Error, KeyboardRegKey};
 use crate::language::LanguageRegKey;
 use std::convert::{TryFrom, TryInto};
-use registry::{Hive, Data, Security};
+use registry::{Data, Hive, RegKey, Security};
 
 fn enabled_input_methods() -> InputList {
     let langs = crate::enabled_languages().unwrap();
@@ -15,7 +15,7 @@ fn enabled_input_methods() -> InputList {
     InputList::try_from(imes).unwrap()
 }
 
-pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<(), Error> {
+pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>, default_user: bool) -> Result<(), Error> {
     let record = match KeyboardRegKey::find_by_product_code(product_code) {
         Some(v) => v,
         None => return Err(Error::NotFound)
@@ -43,6 +43,11 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     input::install_layout(tip, 0).unwrap();
 
     regenerate_registry();
+
+    if default_user {
+        enable_default_user_lang(tag);
+    }
+
     Ok(())
 }
 
@@ -72,6 +77,34 @@ pub fn regenerate_registry() {
     let user_profile_key = Hive::CurrentUser.open(r"Control Panel\International\User Profile", Security::Read).unwrap();
     let substitutes_key = Hive::CurrentUser.open(r"Keyboard Layout\Substitutes", Security::Read).unwrap();
     let preload_key = Hive::CurrentUser.open(r"Keyboard Layout\Preload", Security::Read | Security::Write).unwrap();
+
+    regenerate_given_registry(user_profile_key, substitutes_key, preload_key);
+}
+
+fn enable_default_user_lang(tag: &str) {
+    let default_user_registry = registry::RegKey::load_appkey(r"C:\Users\Default\NTUSER.DAT", Security::Read | Security::Write).unwrap();
+    let language_key = LanguageRegKey::find_by_tag(tag).unwrap().regkey;
+    let substitutes_key = Hive::CurrentUser.open(r"Keyboard Layout\Substitutes", Security::Read).unwrap();
+
+    let default_user_profile_key = default_user_registry.create(format!(r"Control Panel\International\User Profile\{}", tag), Security::Read | Security::Write).unwrap();
+    let default_substitutes_key = default_user_registry.open(r"Keyboard Layout\Substitutes", Security::Read | Security::Write).unwrap();
+
+    for value in language_key.values() {
+        let value = value.unwrap();
+        default_user_profile_key.set_value(value.name(), value.data()).unwrap();
+    }
+
+    for value in substitutes_key.values() {
+        let value = value.unwrap();
+        default_substitutes_key.set_value(value.name(), value.data()).unwrap();
+    }
+
+    let preload_key = default_user_registry.open(r"Keyboard Layout\Preload", Security::Read | Security::Write).unwrap();
+    regenerate_given_registry(default_user_profile_key, substitutes_key, preload_key);
+}
+
+fn regenerate_given_registry(user_profile_key: RegKey, substitutes_key: RegKey, preload_key: RegKey) {
+    
 
     let lang_keys: Vec<_> = user_profile_key.keys()
         .map(|k| k.unwrap().open(Security::Read).unwrap()).collect();
