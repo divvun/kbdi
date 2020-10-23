@@ -1,63 +1,63 @@
 use kbdi::*;
-use clap::{clap_app, crate_version};
+use structopt::{StructOpt};
+
+#[derive(StructOpt)]
+#[structopt(about = "Configure Windows registry values for keyboards", author = "Brendan Molloy <brendan@bbqsrc.net>")]
+enum Opt {
+    #[structopt(name = "keyboard_install", about = "Installs a keyboard layout to the registry")]
+    KeyboardInstall {
+        /// Language tag in BCP 47 format (eg: sma-Latn-NO)
+        #[structopt(short, long)]
+        tag: String,
+        /// Layout name (eg: Skolt Sami (Norway))
+        #[structopt(short = "n", long)]
+        layout: String,
+        /// Product code GUID (eg: {42c3de12-28...})
+        #[structopt(short, long)]
+        guid: String,
+        /// Name of keyboard DLL (eg: kbdfoo01.dll)
+        #[structopt(short, long)]
+        dll: String,
+        /// Native language name, if required (eg: Norsk)
+        #[structopt(short, long)]
+        lang: Option<String>,
+        /// Enable keyboard immediately after installing
+        #[structopt(short, long)]
+        enable: bool,
+
+    },
+    #[structopt(name = "keyboard_uninstall", about = "Uninstalls a keyboard layout from the registry")]
+    KeyboardUninstall {
+        /// Product code GUID (eg: {42c3de12-28...})
+        guid: String,
+    },
+    #[structopt(name = "keyboard_enable", about = "Enables a keyboard for a user")]
+    KeyboardEnable {
+        /// Language tag in BCP 47 format (eg: sma-Latn-NO)
+        #[structopt(short, long)]
+        tag: String,
+        /// Product code GUID (eg: {42c3de12-28...})
+        #[structopt(short, long)]
+        guid: String,
+    },
+    #[structopt(name = "language_query", about = "Get data about language tag")]
+    LanguageQuery {
+        /// Language tag in BCP 47 format (eg: sma-Latn-NO)
+        tag: String,
+    },
+    #[structopt(name = "keyboard_list", about = "Lists all keyboards installed on the system")]
+    KeyboardList,
+    #[structopt(about = "Remove empty languages and invalid keyboards")]
+    Clean,
+}
 
 fn main() {
-    let matches = clap_app!(kbdi =>
-        (@setting SubcommandRequiredElseHelp)
-        (version: crate_version!())
-        (author: "Brendan Molloy <brendan@bbqsrc.net>")
-        (about: "Configure Windows registry values for keyboards")
-        (@subcommand keyboard_install =>
-            (about: "Installs a keyboard layout to the registry")
-            (@arg TAG: -t +takes_value +required "Language tag in BCP 47 format (eg: sma-Latn-NO)")
-            (@arg LAYOUT: -n +takes_value +required "Layout name (eg: Skolt Sami (Norway))")
-            (@arg GUID: -g +takes_value +required "Product code GUID (eg: {42c3de12-28...})")
-            (@arg DLL: -d +takes_value +required "Name of keyboard DLL (eg: kbdfoo01.dll)")
-            (@arg LANG: -l +takes_value "Native language name, if required (eg: Norsk)")
-            (@arg enable: -e "Enable keyboard immediately after installing")
-        )
-        (@subcommand keyboard_uninstall =>
-            (about: "Uninstalls a keyboard layout from the registry")
-            (@arg GUID: +required "Product code GUID (eg: {42c3de12-28...})")
-        )
-        (@subcommand keyboard_enable =>
-            (about: "Enables a keyboard for a user")
-            (@arg TAG: -t +takes_value +required "Language tag in BCP 47 format (eg: sma-Latn-NO)")
-            (@arg GUID: -g +takes_value +required "Product code GUID (eg: {42c3de12-28...})")
-        )
-        // (@subcommand language_enable =>
-        //     (about: "Enable a language with provided tag")
-        //     (@arg TAG: +required "Language tag in BCP 47 format (eg: sma-Latn-NO)")
-        // )
-        (@subcommand language_query =>
-            (about: "Get data about language tag")
-            (@arg TAG: +required "Language tag in BCP 47 format (eg: sma-Latn-NO)")
-        )
-        // (@subcommand language_list => 
-        //     (about: "Lists all languages enabled for the current user")
-        // )
-        (@subcommand keyboard_list =>
-            (about: "Lists all keyboards installed on the system")
-        )
-        // (@subcommand keyboard_enabled =>
-        //     (about: "Lists all enabled keyboards for the user")
-        // )
-        (@subcommand clean =>
-            (about: "Remove empty languages and invalid keyboards")
-        )
-    ).get_matches();
+    let opt = Opt::from_args();
 
-    match matches.subcommand() {
-        ("keyboard_install", Some(matches)) => {
-            let lang_name = matches.value_of("LANG");
-            let layout_dll = matches.value_of("DLL").unwrap();
-            let layout_name = matches.value_of("LAYOUT").unwrap();
-            let tag = matches.value_of("TAG").unwrap();
-            let guid = matches.value_of("GUID").unwrap();
-            let wants_enable = matches.is_present("enable");
-            
+    match opt {
+        Opt::KeyboardInstall{tag, layout, guid, dll,  lang, enable} => {
             println!("Installing keyboard...");
-            match keyboard::install(tag, layout_name, guid, layout_dll, lang_name) {
+            match keyboard::install(&tag, &layout, &guid, &dll, lang.as_deref()) {
                 Ok(_) => (),
                 Err(err) => {
                     match err {
@@ -68,46 +68,27 @@ fn main() {
                     }
                 }
             }
-            if wants_enable {
+            if enable {
                 println!("Enabling keyboard...");
-                keyboard::enable(tag, guid).unwrap();
+                keyboard::enable(&tag, &guid).unwrap();
             }
         },
-        ("keyboard_uninstall", Some(matches)) => {
-            let guid = matches.value_of("GUID").unwrap();
-            keyboard::uninstall(guid).unwrap();
-        },
-        ("keyboard_enable", Some(matches)) => {
-            let tag = matches.value_of("TAG").unwrap();
-            let guid = matches.value_of("GUID").unwrap();
-
-            keyboard::enable(tag, guid).unwrap();
-        },
-        // ("language_enable", Some(matches)) => {
-        //     let tag = matches.value_of("TAG").unwrap();
-        //     enable_language(tag).unwrap();
-        // },
-        ("language_query", Some(matches)) => {
-            let tag = matches.value_of("TAG").unwrap();
-            println!("{}", query_language(tag));
-        },
-        // ("language_list", _) => {
-        //     let languages = enabled_languages().unwrap().join(" ");
-        //     println!("{}", &languages);
-        // },
-        ("keyboard_list", _) => {
+        Opt::KeyboardUninstall{guid} => {
+            keyboard::uninstall(&guid).unwrap();
+        }
+        Opt::KeyboardEnable { tag, guid } => {
+            keyboard::enable(&tag, &guid).unwrap();
+        }
+        Opt::LanguageQuery { tag } => {
+            println!("{}", query_language(&tag));
+        }
+        Opt::KeyboardList => {
             for k in keyboard::installed().iter() {
                 println!("{}", k);
             }
-        },
-        // ("keyboard_enabled", _) => {
-        //     for k in enabled_keyboards().iter() {
-        //         println!("{:?}", k);
-        //     }
-        // },
-        ("clean", _) => {
+        }
+        Opt::Clean => {
             clean().unwrap();
-        },
-        _ => {}
-    };
+        }
+    }
 }
