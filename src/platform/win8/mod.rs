@@ -1,5 +1,9 @@
-use crate::platform::*;
 use std::io;
+use super::winnls;
+
+mod bcp47langs;
+mod winlangdb;
+pub mod keyboard;
 
 pub fn query_language(tag: &str) -> String {
     let id = winnls::resolve_locale_name(tag)

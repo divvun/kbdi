@@ -6,10 +6,7 @@ use std::path::Path;
 use crate::types::InputList;
 use std::convert::{TryFrom, TryInto};
 
-#[cfg(not(feature = "legacy"))]
-pub use crate::keyboard_win8::*;
-#[cfg(feature = "legacy")]
-pub use crate::keyboard_legacy::*;
+pub use crate::platform::keyboard::*;
 
 pub struct KeyboardRegKey {
     id: String,
@@ -48,11 +45,6 @@ pub fn install(
     info!("D: Creating registry key");
     KeyboardRegKey::create(tag, &lang_name, product_code, layout_file, layout_name);
     Ok(())
-}
-
-#[cfg(feature = "legacy")]
-fn enabled_input_methods() -> InputList {
-    InputList::try_from("".to_owned()).unwrap()
 }
 
 fn delete_keyboard_regkey(record: KeyboardRegKey) -> Result<(), Error> {

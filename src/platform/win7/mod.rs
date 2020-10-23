@@ -1,4 +1,6 @@
-use crate::platform::winnls;
+pub mod keyboard;
+
+use super::winnls;
 
 pub fn query_language(tag: &str) -> String {
     let id = winnls::resolve_locale_name(tag)

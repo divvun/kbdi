@@ -4,21 +4,7 @@ mod types;
 mod winrust;
 mod language;
 pub mod keyboard;
-#[cfg(not(feature = "legacy"))]
-mod keyboard_win8;
-#[cfg(feature = "legacy")]
-mod keyboard_legacy;
 pub mod platform;
-
-#[cfg(not(feature = "legacy"))]
-mod win8;
-#[cfg(not(feature = "legacy"))]
-pub use self::win8::*;
-
-#[cfg(feature = "legacy")]
-mod win7;
-#[cfg(feature = "legacy")]
-pub use self::win7::*;
 
 pub fn lcid(tag: &str) -> u32 {
     crate::platform::winnls::locale_name_to_lcid(&tag)

@@ -1,9 +1,19 @@
 #[cfg(not(feature = "legacy"))]
-pub mod bcp47langs;
-#[cfg(not(feature = "legacy"))]
-pub mod winlangdb;
+mod win8;
+#[cfg(feature = "legacy")]
+mod win7;
 pub mod winnls;
 pub mod sys;
+
+#[cfg(not(feature = "legacy"))]
+pub use win8::keyboard as keyboard;
+#[cfg(feature = "legacy")]
+pub use win7::keyboard as keyboard;
+
+#[cfg(not(feature = "legacy"))]
+pub use win8::clean;
+#[cfg(feature = "legacy")]
+pub use win7::clean;
 
 pub mod input {
     use super::*;
