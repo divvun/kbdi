@@ -1,16 +1,16 @@
 use crate::platform::*;
-use std::{convert::TryFrom, io};
-use std::fmt;
-use crate::types::*;   
-use crate::winrust::*;
+use crate::types::*;
 use crate::winrust::hstring::*;
+use crate::winrust::*;
+use std::fmt;
+use std::{convert::TryFrom, io};
 
 pub struct LanguageData {
     pub tag: String,
     pub name: String,
     pub english_name: String,
     pub localised_name: String,
-    pub script_name: String
+    pub script_name: String,
 }
 
 impl fmt::Display for LanguageData {
@@ -35,17 +35,19 @@ impl fmt::Display for LanguageData {
 //     Ok(())
 // }
 
-pub fn ensure_language_profile_exists() -> Result<(), io::Error> {
-    let ret = unsafe { sys::winlangdb::EnsureLanguageProfileExists() };
+// pub fn ensure_language_profile_exists() -> Result<(), io::Error> {
 
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
-    }
+//     let ret = unsafe { sys::winlangdb::EnsureLanguageProfileExists() };
 
-    Ok(())
-}
+//     if ret != 0 {
+//         return Err(io::Error::last_os_error());
+//     }
+
+//     Ok(())
+// }
 
 pub fn get_language_names(tag: &str) -> Option<LanguageData> {
+    log::debug!("get_language_names({:?})", &tag);
     let mut a = [0u16; 256];
     let mut b = [0u16; 256];
     let mut c = [0u16; 256];
@@ -57,12 +59,15 @@ pub fn get_language_names(tag: &str) -> Option<LanguageData> {
             a.as_mut_ptr(),
             b.as_mut_ptr(),
             c.as_mut_ptr(),
-            d.as_mut_ptr()
+            d.as_mut_ptr(),
         )
     };
 
-    if ret < 0 {
-        info!("{:?}", io::Error::last_os_error());
+    if ret != 0 {
+        log::error!(
+            "Error getting language names: {:?}",
+            io::Error::last_os_error()
+        );
         return None;
     }
 
@@ -71,17 +76,21 @@ pub fn get_language_names(tag: &str) -> Option<LanguageData> {
         name: from_wide_string(&a).unwrap(),
         english_name: from_wide_string(&b).unwrap(),
         localised_name: from_wide_string(&c).unwrap(),
-        script_name: from_wide_string(&d).unwrap()
+        script_name: from_wide_string(&d).unwrap(),
     })
 }
 
 pub fn set_user_languages(tags: &[String]) -> Result<(), io::Error> {
-    info!("Set user languages: {:?}", &tags);
+    log::debug!("set_user_languages({:?})", tags);
     let handle = HString::from(tags.join(";"));
+    // let semi = ";".encode_utf16().collect::<Vec<_>>()[0];
     let ret = unsafe { sys::winlangdb::SetUserLanguages(';' as u16, *handle) };
-    
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
+
+    if ret != 0 {
+        let err = io::Error::last_os_error();
+        log::error!("Error setting user languages: {:?}", err);
+
+        return Err(err);
     }
 
     Ok(())

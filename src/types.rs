@@ -1,14 +1,26 @@
-use std::convert::TryFrom;
+use std::{convert::TryFrom, fmt::Debug};
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct InputList {
-    __inner: Vec<InputListItem>
+    __inner: Vec<InputListItem>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+impl Debug for InputList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(&self.__inner).finish()
+    }
+}
+
+#[derive(PartialEq, Eq, Clone)]
 pub struct InputListItem {
     pub lang_id: u16,
-    pub tip_id: u32
+    pub tip_id: u32,
+}
+
+impl Debug for InputListItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{{{:04x}:{:08x}}}", self.lang_id, self.tip_id))
+    }
 }
 
 use std::u16;
@@ -18,15 +30,12 @@ impl TryFrom<&str> for InputListItem {
     type Error = ();
 
     fn try_from(string: &str) -> Result<InputListItem, ()> {
-        debug!("InputListItem try_from: {}", &string);
+        log::trace!("InputListItem try_from: {}", &string);
 
         let lang_id = u16::from_str_radix(&string[0..4], 16).map_err(|_| ())?;
         let tip_id = u32::from_str_radix(&string[5..13], 16).map_err(|_| ())?;
 
-        Ok(InputListItem {
-            lang_id,
-            tip_id
-        })
+        Ok(InputListItem { lang_id, tip_id })
     }
 }
 
@@ -35,9 +44,10 @@ impl TryFrom<String> for InputList {
 
     fn try_from(string: String) -> Result<InputList, ()> {
         Ok(InputList {
-            __inner: string.split(";")
+            __inner: string
+                .split(";")
                 .map(|s| InputListItem::try_from(s))
-                .collect::<Result<Vec<_>, _>>()?
+                .collect::<Result<Vec<_>, _>>()?,
         })
     }
 }
@@ -47,24 +57,24 @@ impl TryFrom<Vec<String>> for InputList {
 
     fn try_from(str_vec: Vec<String>) -> Result<InputList, ()> {
         Ok(InputList {
-            __inner: str_vec.into_iter()
+            __inner: str_vec
+                .into_iter()
                 .map(|s| InputListItem::try_from(&*s))
-                .collect::<Result<Vec<_>, _>>()?
+                .collect::<Result<Vec<_>, _>>()?,
         })
     }
 }
 
 impl From<Vec<InputListItem>> for InputList {
     fn from(vec: Vec<InputListItem>) -> InputList {
-        InputList {
-            __inner: vec
-        }
+        InputList { __inner: vec }
     }
 }
 
 impl From<InputList> for String {
     fn from(input_list: InputList) -> String {
-        let x: Vec<String> = input_list.__inner
+        let x: Vec<String> = input_list
+            .__inner
             .into_iter()
             .map(|i| String::from(i))
             .collect();
@@ -98,6 +108,6 @@ impl InputListItem {
     }
 
     pub fn kbid(&self) -> String {
-       format!("{:08X}", self.tip_id)
+        format!("{:08X}", self.tip_id)
     }
 }

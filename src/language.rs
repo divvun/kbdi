@@ -1,4 +1,4 @@
-use registry::{RegKey, Data, Security, Hive};
+use registry::{Data, Hive, RegKey, Security};
 use std::convert::TryInto;
 
 // fn user_profile() -> RegKey {
@@ -10,7 +10,7 @@ use std::convert::TryInto;
 #[allow(dead_code)]
 pub struct LanguageRegKey {
     id: String,
-    pub(crate) regkey: RegKey
+    pub(crate) regkey: RegKey,
 }
 
 impl LanguageRegKey {
@@ -50,7 +50,12 @@ impl LanguageRegKey {
     // }
 
     pub fn set_language_name(&mut self, name: &str) {
-        self.regkey.set_value("CachedLanguageName", &Data::String(name.try_into().unwrap())).unwrap();
+        self.regkey
+            .set_value(
+                "CachedLanguageName",
+                &Data::String(name.try_into().unwrap()),
+            )
+            .unwrap();
     }
 
     // fn language_name(&self) -> Option<String> {
@@ -86,7 +91,7 @@ impl LanguageRegKey {
 
     //     // Get sub id
     //     let sub_id = format!("{:08x}", next_substitute_id(lcid));
-        
+
     //     // Create substitute entry
     //     kbd_layout_sub_regkey(true).set_value(&sub_id, &kbd_id).unwrap();
     //     kbd_layout_sub_regkey(false).set_value(&sub_id, &kbd_id).unwrap();
@@ -117,11 +122,16 @@ impl LanguageRegKey {
     // }
 
     pub fn find_by_tag(tag: &str) -> Option<LanguageRegKey> {
-        let maybe_regkey = Hive::CurrentUser
-            .open(format!(r"Control Panel\International\User Profile\{}", &tag), Security::Read | Security::Write);
+        let maybe_regkey = Hive::CurrentUser.open(
+            format!(r"Control Panel\International\User Profile\{}", &tag),
+            Security::Read | Security::Write,
+        );
 
         if let Ok(regkey) = maybe_regkey {
-            Some(LanguageRegKey { id: tag.to_owned(), regkey: regkey })
+            Some(LanguageRegKey {
+                id: tag.to_owned(),
+                regkey: regkey,
+            })
         } else {
             None
         }

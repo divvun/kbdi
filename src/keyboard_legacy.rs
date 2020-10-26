@@ -1,13 +1,13 @@
-use registry::{Hive, Data, RegKey, Security};
 use crate::keyboard::{Error, KeyboardRegKey};
-use crate::types::*;
 use crate::platform::*;
+use crate::types::*;
+use registry::{Data, Hive, RegKey, Security};
 use std::convert::TryFrom;
 
 pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
     let record = match KeyboardRegKey::find_by_product_code(product_code) {
         Some(v) => v,
-        None => return Err(Error::NotFound)
+        None => return Err(Error::NotFound),
     };
 
     // Generate input list item
@@ -23,16 +23,21 @@ pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
 
 fn base_regkey(is_all_users: bool) -> RegKey {
     match is_all_users {
-        true => {
-            Hive::Users.open(".DEFAULT", Security::Read | Security::Write).unwrap()
-        },
-        false => Hive::CurrentUser.open("", Security::Read | Security::Write).unwrap()
+        true => Hive::Users
+            .open(".DEFAULT", Security::Read | Security::Write)
+            .unwrap(),
+        false => Hive::CurrentUser
+            .open("", Security::Read | Security::Write)
+            .unwrap(),
     }
 }
 
 fn kbd_layout_sub_regkey(is_all_users: bool) -> RegKey {
     base_regkey(is_all_users)
-        .open(r"Keyboard Layout\Substitutes", Security::Read | Security::Write)
+        .open(
+            r"Keyboard Layout\Substitutes",
+            Security::Read | Security::Write,
+        )
         .unwrap()
 }
 
@@ -57,11 +62,7 @@ fn next_substitute_id(suffix: u16) -> u32 {
                     let v = (val >> 16) as u16;
 
                     if v >= acc {
-                        return if v == 0 {
-                            0xd001
-                        } else {
-                            v + 1
-                        }
+                        return if v == 0 { 0xd001 } else { v + 1 };
                     }
                 }
 

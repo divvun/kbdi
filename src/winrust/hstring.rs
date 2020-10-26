@@ -1,4 +1,4 @@
-use std::ffi::{OsString, OsStr};
+use std::ffi::{OsStr, OsString};
 use std::io;
 use std::ops::{Deref, DerefMut};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
@@ -8,7 +8,7 @@ use winapi::winrt::hstring::HSTRING;
 use winapi::winrt::winstring::*;
 
 pub struct HString {
-  __inner: HSTRING
+    __inner: HSTRING,
 }
 
 impl HString {
@@ -18,7 +18,7 @@ impl HString {
 
     pub unsafe fn null() -> HString {
         HString {
-            __inner: null_mut()
+            __inner: null_mut(),
         }
     }
 
@@ -28,21 +28,19 @@ impl HString {
 
     fn with_wide_string(vec: Option<Vec<u16>>) -> Result<HString, io::Error> {
         let mut handle: HSTRING = null_mut();
-        
+
         let (ptr, len) = match vec {
             Some(v) => (v.as_ptr(), v.len() as u32),
-            None => (null(), 0)
+            None => (null(), 0),
         };
 
         let ret = unsafe { WindowsCreateString(ptr, len, &mut handle) };
-        
-        if ret < 0 {
+
+        if ret != 0 {
             return Err(io::Error::last_os_error());
         }
-        
-        Ok(HString {
-            __inner: handle
-        })
+
+        Ok(HString { __inner: handle })
     }
 }
 
@@ -72,7 +70,8 @@ impl From<HString> for String {
     fn from(hstring: HString) -> Self {
         let os_string = OsString::from(hstring);
 
-        os_string.as_os_str()
+        os_string
+            .as_os_str()
             .to_string_lossy()
             .split('\0')
             .next()
@@ -92,9 +91,7 @@ impl From<HString> for OsString {
 
 impl<'a> From<&'a str> for HString {
     fn from(string: &str) -> Self {
-        let x = OsStr::new(string)
-            .encode_wide()
-            .collect();
+        let x = OsStr::new(string).encode_wide().collect();
         HString::with_wide_string(Some(x)).unwrap()
     }
 }

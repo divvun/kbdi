@@ -1,7 +1,7 @@
 use crate::platform::*;
-use std::io;
-use crate::winrust::*;
 use crate::winrust::hstring::*;
+use crate::winrust::*;
+use std::io;
 
 pub fn get_user_languages() -> Result<Vec<String>, io::Error> {
     let handle = unsafe {
@@ -12,7 +12,7 @@ pub fn get_user_languages() -> Result<Vec<String>, io::Error> {
         }
         hstring
     };
-        
+
     let langs = String::from(handle);
     Ok(langs.split(';').map(|x| x.to_owned()).collect())
 }
@@ -22,13 +22,14 @@ pub fn get_user_language_input_methods(tag: &str) -> Result<Vec<String>, io::Err
 
     let handle = unsafe {
         let mut hstring = HString::null();
-        let ret = sys::bcp47langs::GetUserLanguageInputMethods(wtag.as_ptr(), ';' as u16, &mut *hstring);
-        if ret < 0 {
+        let ret =
+            sys::bcp47langs::GetUserLanguageInputMethods(wtag.as_ptr(), ';' as u16, &mut *hstring);
+        if ret != 0 {
             return Err(io::Error::last_os_error());
         }
         hstring
     };
-        
+
     let langs = String::from(handle);
     if langs == "" {
         return Ok(vec![]);
@@ -44,8 +45,15 @@ pub fn lcid_from_bcp47(tag: &str) -> Option<u32> {
 
     match lcid {
         0 => None,
-        _ => Some(lcid as u32)
+        _ => Some(lcid as u32),
     }
+}
+
+pub fn bcp47_get_iso_language_code(tag: &str) -> i32 {
+    let tag = HString::from(tag);
+    let mut handle = unsafe { HString::null() };
+
+    unsafe { sys::bcp47langs::Bcp47GetIsoLanguageCode(*tag, &mut *handle) }
 }
 
 pub fn remove_inputs_for_all_languages() -> Result<(), io::Error> {

@@ -1,14 +1,15 @@
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 
-mod types;
-mod winrust;
-mod language;
 pub mod keyboard;
-#[cfg(not(feature = "legacy"))]
-mod keyboard_win8;
 #[cfg(feature = "legacy")]
 mod keyboard_legacy;
+#[cfg(not(feature = "legacy"))]
+mod keyboard_win8;
+mod language;
 pub mod platform;
+mod types;
+mod winrust;
 
 #[cfg(not(feature = "legacy"))]
 mod win8;

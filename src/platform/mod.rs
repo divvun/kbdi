@@ -1,16 +1,16 @@
 #[cfg(not(feature = "legacy"))]
 pub mod bcp47langs;
+pub mod sys;
 #[cfg(not(feature = "legacy"))]
 pub mod winlangdb;
 pub mod winnls;
-pub mod sys;
 
 pub mod input {
     use super::*;
-    use std::io;
     use crate::types::InputList;
-    use std::ptr::null;
     use crate::winrust::to_wide_string;
+    use std::io;
+    use std::ptr::null;
 
     pub fn install_layout(inputs: InputList, flag: i32) -> Result<(), io::Error> {
         info!("Input list: {:?}", &inputs);
@@ -21,7 +21,7 @@ pub mod input {
         // let ret = unsafe { sys::input::InstallLayoutOrTipUserReg(null(), null(), null(), winput.as_ptr(), flag) };
         let ret = unsafe { sys::input::InstallLayoutOrTip(winput.as_ptr(), flag) };
         if ret < 0 {
-            return Err(io::Error::last_os_error())
+            return Err(io::Error::last_os_error());
         }
 
         Ok(())
@@ -29,11 +29,15 @@ pub mod input {
 }
 
 pub mod winuser {
-    use winapi::um::winuser;
     use crate::winrust::to_wide_string;
+    use winapi::um::winuser;
 
     pub fn load_keyboard_layout(klid: &str) {
-        unsafe { winuser::LoadKeyboardLayoutW(to_wide_string(klid).as_ptr(), 
-            winuser::KLF_ACTIVATE | winuser::KLF_SETFORPROCESS) };
+        unsafe {
+            winuser::LoadKeyboardLayoutW(
+                to_wide_string(klid).as_ptr(),
+                winuser::KLF_ACTIVATE | winuser::KLF_SETFORPROCESS,
+            )
+        };
     }
 }
