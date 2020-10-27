@@ -26,35 +26,43 @@ pub fn lcid(tag: &str) -> u32 {
         .map(|x| if x == 0x1000 { 0x2000 } else { x })
         .unwrap_or(0x2000)
 }
-// #[test]
-// fn test_sub_id() {
-//     info!("sub_id: {:08x}", next_substitute_id(0xabcd));
-//     info!("sub_id: {:08x}", next_substitute_id(0x0c09));
-// }
 
-// #[test]
-// fn test_it_doth_work() {
-//     let v = LanguageRegKey::next_transient_lang_id();
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("IO error")]
+    Io(#[from] std::io::Error),
 
-//     info!("Transient id: {:04x}", v);
-// }
+    #[error("Path error")]
+    Path(#[from] pathos::Error),
 
-// #[test]
-// fn test_lcid_from_bcp47() {
-//     assert_eq!(bcp47langs::lcid_from_bcp47("en-AU"), Some(0x0c09), "en-AU");
-//     assert_eq!(bcp47langs::lcid_from_bcp47("vro-Latn"), Some(0x2000), "vro-Latn");
-//     assert_eq!(bcp47langs::lcid_from_bcp47("sjd-Cyrl"), Some(0x1000), "sjd-Cyrl");
-// }
+    #[error("Set logger error")]
+    SetLoggerError(#[from] log::SetLoggerError),
+}
 
-// #[test]
-// fn test_default_input() {
-//     assert_eq!(winlangdb::default_input_method("en-AU"), InputList("0C09:00000409".to_owned()))
-// }
+pub fn setup_logger() -> Result<(), Error> {
+    let log_path = if whoami::username() == "SYSTEM" {
+        pathos::system::app_log_dir("kbdi")
+    } else {
+        pathos::user::app_log_dir("kbdi")?
+    };
 
-// #[test]
-// fn test_transform_input() {
-//     assert_eq!(
-//         winlangdb::transform_input_methods(InputList("0C09:00000409".to_owned()), "en-AU"),
-//         InputList("0C09:00000409".to_owned())
-//     );
-// }
+    std::fs::create_dir_all(&log_path)?;
+
+    fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{} {:<5} {}] {}",
+                chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                record.level(),
+                record.target(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Info)
+        .level_for("kbdi", log::LevelFilter::Trace)
+        .chain(std::io::stdout())
+        .chain(fern::log_file(log_path.join(format!("run.log")))?)
+        .apply()?;
+
+    Ok(())
+}

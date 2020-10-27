@@ -17,9 +17,68 @@ fn enabled_input_methods() -> InputList {
     InputList::try_from(imes).unwrap()
 }
 
+fn log_important_regkeys() {
+    log::trace!("  == REGKEY WATCH ==");
+    log::trace!("");
+
+    let substitutes_key = Hive::CurrentUser
+        .open(r"Keyboard Layout\Substitutes", Security::Read)
+        .unwrap();
+
+    let user_profile_key = Hive::CurrentUser
+        .create(r"Control Panel\International\User Profile", Security::Read)
+        .unwrap();
+
+    let preload_key = Hive::CurrentUser
+        .open(r"Keyboard Layout\Preload", Security::Read)
+        .unwrap();
+
+    let user_profile_subkeys = user_profile_key
+        .keys()
+        .filter_map(Result::ok)
+        .map(|x| x.open(Security::Read))
+        .filter_map(Result::ok);
+
+    for key in user_profile_subkeys {
+        log::trace!("{}", key);
+        for value in key.values().filter_map(Result::ok) {
+            let (inner_name, inner_data) = value.into_inner();
+
+            let name = inner_name.to_string_lossy().to_string();
+            let data = format!("{}", inner_data);
+            log::trace!("  '{}' = '{}'", name, data);
+        }
+        log::trace!("");
+    }
+
+    log::trace!("{}", preload_key);
+    for value in preload_key.values().filter_map(Result::ok) {
+        let (inner_name, inner_data) = value.into_inner();
+
+        let name = inner_name.to_string_lossy().to_string();
+        let data = format!("{}", inner_data);
+        log::trace!("  '{}' = '{}'", name, data);
+    }
+    log::trace!("");
+
+    log::trace!("{}", substitutes_key);
+    for value in substitutes_key.values().filter_map(Result::ok) {
+        let (inner_name, inner_data) = value.into_inner();
+
+        let name = inner_name.to_string_lossy().to_string();
+        let data = format!("{}", inner_data);
+        log::trace!("  '{}' = '{}'", name, data);
+    }
+    log::trace!("");
+
+    log::trace!("  == If you see a suspicious REGKEY in your neighbourhood, call 112 ==")
+}
+
 pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<(), Error> {
     log::info!("Enabling '{}' with product code '{}'", tag, product_code);
     log::info!("Lang name: {:?}", lang_name);
+
+    log_important_regkeys();
 
     let original_layout = winuser::current_keyboard();
     let record = match KeyboardRegKey::find_by_product_code(product_code) {
@@ -30,6 +89,7 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     // Check language is enabled or LCID check will fail
     log::info!("Enabling language by tag");
     crate::enable_language(tag).unwrap();
+    log_important_regkeys();
 
     // Get all languages and keyboards
     let mut keyboards = crate::win8::enabled_keyboards()
@@ -37,15 +97,19 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
         .into_iter()
         .collect::<HashMap<_, _>>();
 
+    log::trace!("bcp47langs::lcid_from_bcp47(tag).unwrap()");
     let lcid = bcp47langs::lcid_from_bcp47(tag).unwrap();
     let tip = format!("{:04X}:{}", lcid, record.regkey_id());
     keyboards
         .entry(tag.to_string())
         .and_modify(|x| x.push(tip.clone()))
         .or_insert(vec![tip.clone()]);
+    log_important_regkeys();
 
     // Remove all inputs internal
+    log::trace!("bcp47langs::remove_inputs_for_all_languages().unwrap();");
     bcp47langs::remove_inputs_for_all_languages().unwrap();
+    log_important_regkeys();
 
     // Build input method list
     let mut first = true;
@@ -62,12 +126,15 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
         first = false;
 
         input::install_layout(inputs, flag).unwrap();
+        log_important_regkeys();
     }
 
     log::info!("Regenerating registry for keyboards");
     regenerate_registry();
+    log_important_regkeys();
 
     winuser::set_active_keyboard(original_layout);
+    log_important_regkeys();
     Ok(())
 }
 

@@ -265,6 +265,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "134951f4028bdadb9b84baf4232681efbf277da25144b9b0ad65df75946c422b"
 
 [[package]]
+name = "eieio"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f3dd87dfc333e61e1be9ec6d6a4d946a98ece074da331eeb5d1c0b98b47ee34"
+
+[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -344,6 +350,15 @@ dependencies = [
  "quote",
  "syn",
  "synstructure",
+]
+
+[[package]]
+name = "fern"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c9a4820f0ccc8a7afd67c39a0f1a0f4b07ca1725164271a64939d7aeb9af065"
+dependencies = [
+ "log",
 ]
 
 [[package]]
@@ -474,6 +489,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5aca5565f760fb5b220e499d72710ed156fdb74e631659e99377d9ebfbd13ae8"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "home"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2456aef2e6b6a9784192ae780c0f15bc57df0e918585282325e8c8ac27737654"
+dependencies = [
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -632,6 +656,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "iref"
+version = "1.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de6c200d5291daeb5747f0bb0e479e440b769ecd13f90a6c57a3f732517c568f"
+dependencies = [
+ "pct-str",
+ "smallvec 1.4.2",
+]
+
+[[package]]
 name = "itoa"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -641,14 +675,19 @@ checksum = "dc6f3ad7b9d11a0c00842ff8de1b60ee58661048eb8049ed33c73594f359d7e6"
 name = "kbdi"
 version = "0.5.0"
 dependencies = [
+ "chrono",
  "embed-resource",
  "env_logger 0.8.1",
+ "fern",
  "lazy_static",
  "libloading",
  "log",
+ "pathos",
  "registry",
  "sentry",
  "structopt",
+ "thiserror",
+ "whoami",
  "winapi 0.3.9",
 ]
 
@@ -851,6 +890,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37fd5004feb2ce328a52b0b3d01dbf4ffff72583493900ed15f22d4111c51693"
 
 [[package]]
+name = "once_cell"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "260e51e7efe62b592207e9e13a68e43692a7a279171d6ba57abd208bf23645ad"
+
+[[package]]
 name = "openssl"
 version = "0.10.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -884,6 +929,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "os_str_bytes"
+version = "2.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ac6fe3538f701e339953a3ebbe4f39941aababa8a3f6964635b24ab526daeac"
+
+[[package]]
 name = "parking_lot"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -905,9 +956,32 @@ dependencies = [
  "libc",
  "redox_syscall",
  "rustc_version",
- "smallvec",
+ "smallvec 0.6.13",
  "winapi 0.3.9",
 ]
+
+[[package]]
+name = "pathos"
+version = "0.3.0-pre.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a622ae1fb6a5ac1fe52cf65d71dc9adb46471a17d2c034b88b7583781089ed4"
+dependencies = [
+ "eieio",
+ "home",
+ "iref",
+ "libc",
+ "log",
+ "once_cell",
+ "os_str_bytes",
+ "percent-encoding 2.1.0",
+ "thiserror",
+]
+
+[[package]]
+name = "pct-str"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1240e3e7bfdde5660ba0fc3e9e3565d3b30c2ae1973e218e93b869da771ff2e9"
 
 [[package]]
 name = "percent-encoding"
@@ -1427,6 +1501,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "smallvec"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbee7696b84bbf3d89a1c2eccff0850e3047ed46bfcd2e92c29a2d074d57e252"
+
+[[package]]
 name = "string"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1870,6 +1950,12 @@ name = "wasi"
 version = "0.10.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
+
+[[package]]
+name = "whoami"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7884773ab69074615cb8f8425d0e53f11710786158704fca70f53e71b0e05504"
 
 [[package]]
 name = "winapi"

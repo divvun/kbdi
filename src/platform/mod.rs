@@ -13,9 +13,10 @@ pub mod input {
     use std::ptr::null;
 
     pub fn install_layout(inputs: InputList, flag: i32) -> Result<(), io::Error> {
-        info!("Input list: {:?}", &inputs);
+        log::debug!("install_layout({:?}, {:?})", inputs, flag);
+        log::trace!("Input list: {:?}", &inputs);
         let input_string = String::from(inputs);
-        info!("Input string: {}", &input_string);
+        log::trace!("Input string: {}", &input_string);
         let winput = to_wide_string(&input_string);
 
         // let ret = unsafe { sys::input::InstallLayoutOrTipUserReg(null(), null(), null(), winput.as_ptr(), flag) };

@@ -29,6 +29,11 @@ lazy_static = "1.2.0"
 sentry = "0.12.0"
 winapi = { version = "0.3", features = ["everything"] }
 registry = {git = "https://github.com/bbqsrc/registry-rs",  branch="main"}
+pathos = "0.3.0-pre.1"
+fern = "0.6.0"
+whoami = "0.9.0"
+thiserror = "1.0.21"
+chrono = "0.4.19"
 
 [dependencies.structopt]
 version = "0.3.0"

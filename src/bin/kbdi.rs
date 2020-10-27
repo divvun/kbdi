@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate log;
-
 use kbdi::*;
 use structopt::StructOpt;
 
@@ -92,7 +89,7 @@ enum Opt {
 }
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("trace")).init();
+    kbdi::setup_logger().unwrap_or_else(|_| eprintln!("Logger failed to init."));
     log::info!("Starting Divvun Keyboard Installer...");
 
     let _guard = option_env!("SENTRY_DSN").map(|var| sentry::init(var));
