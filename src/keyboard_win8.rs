@@ -21,6 +21,7 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     log::info!("Enabling '{}' with product code '{}'", tag, product_code);
     log::info!("Lang name: {:?}", lang_name);
 
+    let original_layout = winuser::current_keyboard();
     let record = match KeyboardRegKey::find_by_product_code(product_code) {
         Some(v) => v,
         None => return Err(Error::NotFound),
@@ -66,6 +67,7 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     log::info!("Regenerating registry for keyboards");
     regenerate_registry();
 
+    winuser::set_active_keyboard(original_layout);
     Ok(())
 }
 

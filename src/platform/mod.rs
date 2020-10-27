@@ -40,4 +40,19 @@ pub mod winuser {
             )
         };
     }
+
+    pub fn current_keyboard() -> isize {
+        unsafe { winuser::GetKeyboardLayout(0) as isize }
+    }
+
+    pub fn set_active_keyboard(layout: isize) {
+        unsafe {
+            winuser::PostMessageW(
+                winuser::HWND_BROADCAST,
+                winuser::WM_INPUTLANGCHANGEREQUEST,
+                0,
+                layout,
+            )
+        };
+    }
 }
