@@ -25,27 +25,6 @@ impl fmt::Display for LanguageData {
     }
 }
 
-// pub fn remove_inputs_for_all_languages_internal() -> Result<(), io::Error> {
-//     let ret = unsafe { sys::winlangdb::RemoveInputsForAllLanguagesInternal() };
-
-//     if ret < 0 {
-//         return Err(io::Error::last_os_error());
-//     }
-
-//     Ok(())
-// }
-
-// pub fn ensure_language_profile_exists() -> Result<(), io::Error> {
-
-//     let ret = unsafe { sys::winlangdb::EnsureLanguageProfileExists() };
-
-//     if ret != 0 {
-//         return Err(io::Error::last_os_error());
-//     }
-
-//     Ok(())
-// }
-
 pub fn get_language_names(tag: &str) -> Option<LanguageData> {
     log::debug!("get_language_names({:?})", &tag);
     let mut a = [0u16; 256];

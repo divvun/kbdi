@@ -80,6 +80,9 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
 
     log_important_regkeys();
 
+    log::info!("Regenerating registry for keyboards, just in case.");
+    regenerate_registry();
+
     let original_layout = winuser::current_keyboard();
     let record = match KeyboardRegKey::find_by_product_code(product_code) {
         Some(v) => v,
@@ -89,7 +92,6 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     // Check language is enabled or LCID check will fail
     log::info!("Enabling language by tag");
     crate::enable_language(tag).unwrap();
-    log_important_regkeys();
 
     // Get all languages and keyboards
     let mut keyboards = crate::win8::enabled_keyboards()
@@ -126,15 +128,14 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
         first = false;
 
         input::install_layout(inputs, flag).unwrap();
-        log_important_regkeys();
     }
 
     log::info!("Regenerating registry for keyboards");
     regenerate_registry();
     log_important_regkeys();
 
+    log::info!("Resetting current active keyboard");
     winuser::set_active_keyboard(original_layout);
-    log_important_regkeys();
     Ok(())
 }
 
