@@ -109,9 +109,9 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     log_important_regkeys();
 
     // Remove all inputs internal
-    log::trace!("bcp47langs::remove_inputs_for_all_languages().unwrap();");
-    bcp47langs::remove_inputs_for_all_languages().unwrap();
-    log_important_regkeys();
+    // log::trace!("bcp47langs::remove_inputs_for_all_languages().unwrap();");
+    // bcp47langs::remove_inputs_for_all_languages().unwrap();
+    // log_important_regkeys();
 
     // Build input method list
     let mut first = true;
