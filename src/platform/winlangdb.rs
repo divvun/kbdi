@@ -60,12 +60,18 @@ pub fn get_language_names(tag: &str) -> Option<LanguageData> {
 }
 
 pub fn set_user_languages(tags: &[String]) -> Result<(), io::Error> {
+    if tags.is_empty() {
+        panic!("Tags must not be empty");
+    }
+
     log::debug!("set_user_languages({:?})", tags);
-    let joined = format!("{}", tags.join(":"));
+
+    // We duplicate the first item because 32-bit binaries on 64-bit Windows fail to set the first item.
+    // DO NOT REMOVE WITHOUT SETTING ASIDE TWO DAYS TO REALISE YOU HAVE MADE A HORRIBLE ERROR.
+    let joined = format!("{};{}", &tags[0], tags.join(";"));
     log::trace!("Joined: {:?}", &joined);
     let handle = HString::from(joined);
-    // let semi = ";".encode_utf16().collect::<Vec<_>>()[0];
-    let ret = unsafe { sys::winlangdb::SetUserLanguages(':' as u16, *handle) };
+    let ret = unsafe { sys::winlangdb::SetUserLanguages(';' as u16, *handle) };
 
     if ret != 0 {
         let err = io::Error::last_os_error();
