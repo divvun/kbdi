@@ -679,6 +679,7 @@ dependencies = [
  "embed-resource",
  "env_logger 0.8.1",
  "fern",
+ "indexmap",
  "lazy_static",
  "libloading",
  "log",

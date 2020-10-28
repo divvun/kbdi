@@ -61,7 +61,9 @@ pub fn get_language_names(tag: &str) -> Option<LanguageData> {
 
 pub fn set_user_languages(tags: &[String]) -> Result<(), io::Error> {
     log::debug!("set_user_languages({:?})", tags);
-    let handle = HString::from(tags.join(";"));
+    let joined = tags.join(";");
+    log::trace!("Joined: {:?}", &joined);
+    let handle = HString::from(joined);
     // let semi = ";".encode_utf16().collect::<Vec<_>>()[0];
     let ret = unsafe { sys::winlangdb::SetUserLanguages(';' as u16, *handle) };
 

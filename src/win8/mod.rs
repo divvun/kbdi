@@ -39,7 +39,7 @@ pub fn enabled_keyboards() -> Result<Vec<LangKeyboards>, io::Error> {
 pub fn enable_language(tag: &str) -> Result<(), io::Error> {
     log::debug!("enable_languages({:?})", tag);
     let mut langs = enabled_languages()?;
-    log::trace!("Langs: {:?}", langs);
+    log::trace!("Enabled languages: {:?}", langs);
     let lang = tag.to_owned();
 
     if langs.contains(&lang) {

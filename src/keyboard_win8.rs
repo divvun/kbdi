@@ -4,9 +4,9 @@ use crate::platform::*;
 use crate::types::*;
 use registry::{Data, Hive, RegKey, Security};
 use std::{
-    collections::hash_map::HashMap,
     convert::{TryFrom, TryInto},
 };
+use indexmap::IndexMap;
 
 fn enabled_input_methods() -> InputList {
     let langs = crate::enabled_languages().unwrap();
@@ -50,6 +50,16 @@ fn log_important_regkeys() {
         }
         log::trace!("");
     }
+
+    log::trace!("{}", user_profile_key);
+    for value in  user_profile_key.values().filter_map(Result::ok) {
+        let (inner_name, inner_data) = value.into_inner();
+
+        let name = inner_name.to_string_lossy().to_string();
+        let data = format!("{}", inner_data);
+        log::trace!("  '{}' = '{}'", name, data);
+    }
+    log::trace!("");
 
     log::trace!("{}", preload_key);
     for value in preload_key.values().filter_map(Result::ok) {
@@ -97,15 +107,21 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     let mut keyboards = crate::win8::enabled_keyboards()
         .unwrap()
         .into_iter()
-        .collect::<HashMap<_, _>>();
+        .collect::<IndexMap<_, _>>();
+    log::trace!("Keyboards: {:?}", &keyboards);
 
     log::trace!("bcp47langs::lcid_from_bcp47(tag).unwrap()");
     let lcid = bcp47langs::lcid_from_bcp47(tag).unwrap();
     let tip = format!("{:04X}:{}", lcid, record.regkey_id());
+
+    log::debug!("Injecting into keyboard list: {}", &tip);
+
     keyboards
         .entry(tag.to_string())
         .and_modify(|x| x.push(tip.clone()))
         .or_insert(vec![tip.clone()]);
+
+    log::debug!("Keyboard list: {:?}", &keyboards);
     log_important_regkeys();
 
     // Remove all inputs internal
@@ -118,17 +134,24 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
     for (lang_tag, tips) in keyboards {
         let _lcid = match bcp47langs::lcid_from_bcp47(&lang_tag) {
             Some(v) => v,
-            None => continue,
+            None => {
+                log::error!("No LCID for {}; continuing!", &lang_tag);
+                continue
+            },
         };
 
+        log::debug!("Tip for {}: {:?}", lang_tag, &tips);
         let inputs = InputList::try_from(tips).unwrap();
+        log::debug!("Input list for {}: {:?}", lang_tag, &inputs);
 
         // Flag 256 seems to clear everything.
-        let flag = if first { 256 } else { 0 };
+        // let flag = if first { 256 } else { 0 };
+        let flag = 0;
         first = false;
 
         input::install_layout(inputs, flag).unwrap();
     }
+    log_important_regkeys();
 
     log::info!("Regenerating registry for keyboards");
     regenerate_registry();
@@ -291,10 +314,10 @@ fn regenerate_given_registry(
         let tip = format!("{:08x}", item.tip_id);
 
         let value = if subs.iter().find(|sub| sub.0 == lcid).is_some() {
-            log::trace!("Adding substitute lcid: {}", &lcid);
+            log::trace!("{}: Adding substitute lcid: {}", i + 1, &lcid);
             lcid.try_into().unwrap()
         } else {
-            log::trace!("Adding TIP: {}", &tip);
+            log::trace!("{}: Adding TIP: {}", i + 1, &tip);
             tip.try_into().unwrap()
         };
 

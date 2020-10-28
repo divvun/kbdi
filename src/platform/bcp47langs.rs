@@ -4,6 +4,15 @@ use crate::winrust::*;
 use std::io;
 
 pub fn get_user_languages() -> Result<Vec<String>, io::Error> {
+    // let data = registry::Hive::CurrentUser
+    //     .open(r"Control Panel\International\User Profile", registry::Security::Read)
+    //     .unwrap()
+    //     .value("Languages")
+    //     .unwrap();
+    // match data {
+    //     registry::Data::MultiString(v) => Ok(v.into_iter().map(|x| x.to_string_lossy().to_string()).collect()),
+    //     _ => return Ok(vec![])
+    // }
     let handle = unsafe {
         let mut hstring = HString::null();
         let ret = sys::bcp47langs::GetUserLanguages(';' as u16, &mut *hstring);
