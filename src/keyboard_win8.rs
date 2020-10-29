@@ -2,11 +2,9 @@ use crate::keyboard::{Error, KeyboardRegKey};
 use crate::language::LanguageRegKey;
 use crate::platform::*;
 use crate::types::*;
-use registry::{Data, Hive, RegKey, Security};
-use std::{
-    convert::{TryFrom, TryInto},
-};
 use indexmap::IndexMap;
+use registry::{Data, Hive, RegKey, Security};
+use std::convert::{TryFrom, TryInto};
 
 fn enabled_input_methods() -> InputList {
     let langs = crate::enabled_languages().unwrap();
@@ -52,7 +50,7 @@ fn log_important_regkeys() {
     }
 
     log::trace!("{}", user_profile_key);
-    for value in  user_profile_key.values().filter_map(Result::ok) {
+    for value in user_profile_key.values().filter_map(Result::ok) {
         let (inner_name, inner_data) = value.into_inner();
 
         let name = inner_name.to_string_lossy().to_string();
@@ -136,8 +134,8 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
             Some(v) => v,
             None => {
                 log::error!("No LCID for {}; continuing!", &lang_tag);
-                continue
-            },
+                continue;
+            }
         };
 
         log::debug!("Tip for {}: {:?}", lang_tag, &tips);

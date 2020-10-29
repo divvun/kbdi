@@ -1,3 +1,5 @@
+use registry::{Hive, Security};
+
 use crate::platform::*;
 use std::io;
 
@@ -67,7 +69,37 @@ fn set_user_languages(tags: &[String]) -> Result<(), String> {
     log::trace!("valid_tags: {:?}", &valid_tags);
 
     winlangdb::set_user_languages(&valid_tags)
-        .or_else(|_| Err("Failed enabling languages".to_owned()))
+        .or_else(|_| Err("Failed enabling languages".to_owned()))?;
+
+    // Workaround for bug in Windows 10 20H2
+    win10_20h2_workaround()?;
+
+    Ok(())
+}
+
+fn win10_20h2_workaround() -> Result<(), String> {
+    let user_profile_key = Hive::CurrentUser
+        .open(
+            r"Control Panel\International\User Profile",
+            Security::Read | Security::Write,
+        )
+        .unwrap();
+
+    for subkey in user_profile_key
+        .keys()
+        .filter_map(Result::ok)
+        .map(|x| x.open(Security::Read | Security::Write))
+        .filter_map(Result::ok)
+    {
+        if subkey.value("FeaturesToInstall").is_err() {
+            log::debug!("20H2 Workaround: setting FeaturesToInstall to 0xe3 for {}", subkey.to_string());
+            subkey
+                .set_value("FeaturesToInstall", &registry::Data::U32(0xe3))
+                .map_err(|e| format!("{:?}", e))?;
+        }
+    }
+
+    Ok(())
 }
 
 fn disable_empty_languages() -> Result<(), io::Error> {
