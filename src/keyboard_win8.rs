@@ -262,7 +262,7 @@ fn regenerate_given_registry(
     log::trace!("Lang keys: {:?}", lang_keys);
 
     // Get known keyboard ids from Control Panel configured language list
-    let keyboard_ids: Vec<_> = lang_keys
+    let mut keyboard_ids: Vec<_> = lang_keys
         .iter()
         .flat_map(|k| k.values())
         .map(|v| v.unwrap().name().to_string_lossy())
@@ -271,6 +271,9 @@ fn regenerate_given_registry(
         // .map(|n| n.split(":").last().unwrap().to_string())
         .filter_map(Result::ok)
         .collect();
+
+    keyboard_ids.sort_by(|a, b| a.tip_id.cmp(&b.tip_id));
+    keyboard_ids.sort_by(|a, b| a.lang_id.cmp(&b.lang_id));
 
     log::trace!("Keyboard IDs: {:?}", &keyboard_ids);
 
@@ -311,9 +314,9 @@ fn regenerate_given_registry(
         let lcid = format!("{:08x}", item.lang_id);
         let tip = format!("{:08x}", item.tip_id);
 
-        let value = if subs.iter().find(|sub| sub.0 == lcid).is_some() {
-            log::trace!("{}: Adding substitute lcid: {}", i + 1, &lcid);
-            lcid.try_into().unwrap()
+        let value = if let Some(sub) = subs.iter().filter(|sub| sub.1 == tip && sub.0[4..] == lcid[4..]).nth(0) {
+            log::trace!("{}: Adding substitute lcid: {}", i + 1, &sub.0);
+            sub.0.clone().try_into().unwrap()
         } else {
             log::trace!("{}: Adding TIP: {}", i + 1, &tip);
             tip.try_into().unwrap()
