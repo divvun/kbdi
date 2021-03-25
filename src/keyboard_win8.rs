@@ -157,6 +157,11 @@ pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<
 
     log::info!("Resetting current active keyboard");
     winuser::set_active_keyboard(original_layout);
+
+    coreglobconfig::sync_language_data();
+    std::thread::sleep_ms(10000);
+    log::info!("Done saving lang to cloud");
+    
     Ok(())
 }
 

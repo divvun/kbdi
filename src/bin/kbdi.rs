@@ -88,8 +88,6 @@ enum Opt {
     Clean,
 }
 
-// This code really does not work as a 64bit binary due to bugs in Windows.
-#[cfg(target_pointer_width = "32")]
 fn main() {
     kbdi::setup_logger().unwrap_or_else(|_| eprintln!("Logger failed to init."));
     log::info!("Starting Divvun Keyboard Installer...");
