@@ -57,3 +57,12 @@ pub mod winuser {
         };
     }
 }
+
+#[cfg(not(feature = "legacy"))]
+pub mod coreglobconfig {
+    use super::*;
+    
+    pub fn sync_language_data() {
+        unsafe { sys::coreglobconfig::SyncLanguageDataToCloud() }
+    }
+}

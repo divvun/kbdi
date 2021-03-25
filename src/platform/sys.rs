@@ -33,6 +33,25 @@ pub mod bcp47langs {
     }
 }
 
+#[cfg(not(feature = "legacy"))]
+pub mod coreglobconfig {
+    use lazy_static::lazy_static;
+    use libloading::os::windows::*;
+    use winapi::winrt::hstring::HSTRING;
+    use winapi::{
+        ctypes::*,
+        um::winnt::{CHAR, WCHAR},
+    };
+
+    lazy_static! {
+        static ref LIB: Library = Library::new(r"C:\Windows\System32\coreglobconfig.dll").unwrap();
+    }
+
+    lib_extern! {
+        SyncLanguageDataToCloud() -> ()
+    }
+}
+
 pub mod input {
     use lazy_static::lazy_static;
     use libloading::os::windows::*;

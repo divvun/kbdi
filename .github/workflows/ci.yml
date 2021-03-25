@@ -39,9 +39,14 @@ jobs:
         override: true
         components: rustfmt
         target: i686-pc-windows-msvc
-    - name: Build kbdi.exe
+    - name: Build kbdi.exe (32-bit)
       run: |
         cargo build --release --target i686-pc-windows-msvc --bin kbdi
+      env:
+        RUSTC_BOOTSTRAP: 1
+    - name: Build kbdi.exe (64-bit)
+      run: |
+        cargo build --release --target x86_64-pc-windows-msvc --bin kbdi
       env:
         RUSTC_BOOTSTRAP: 1
     - name: Build kbdi-legacy.exe
@@ -54,11 +59,16 @@ jobs:
         mkdir -p dist/bin
         mkdir -p dist-legacy/bin
         mv target/i686-pc-windows-msvc/release/kbdi.exe dist/bin/kbdi.exe
+        mv target/x86_64-pc-windows-msvc/release/kbdi.exe dist/bin/kbdi-x64.exe
         mv target/i686-pc-windows-msvc/release/kbdi-legacy.exe dist-legacy/bin/kbdi-legacy.exe
     - name: Sign code
       uses: divvun/actions/codesign@master
       with:
         path: dist/bin/kbdi.exe
+    - name: Sign 64-bit code
+      uses: divvun/actions/codesign@master
+      with:
+        path: dist/bin/kbdi-x64.exe
     - name: Sign legacy code
       uses: divvun/actions/codesign@master
       with:
