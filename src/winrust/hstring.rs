@@ -13,7 +13,7 @@ pub struct HString {
 
 impl HString {
     pub fn new() -> Result<HString, io::Error> {
-        Self::with_wide_string(None)
+        Self::with_wide_string(Vec::new())
     }
 
     pub unsafe fn null() -> HString {
@@ -26,12 +26,15 @@ impl HString {
         unsafe { WindowsGetStringLen(self.__inner) as usize }
     }
 
-    fn with_wide_string(vec: Option<Vec<u16>>) -> Result<HString, io::Error> {
+    fn with_wide_string(mut vec: Vec<u16>) -> Result<HString, io::Error> {
         let mut handle: HSTRING = null_mut();
 
-        let (ptr, len) = match vec {
-            Some(v) => (v.as_ptr(), v.len() as u32),
-            None => (null(), 0),
+        vec.push(0);
+        let (ptr, len) = match vec.len() {
+            0 | 1 => (null(), 0),
+            n => {
+                (vec.as_ptr(), (n - 1) as u32)
+            }
         };
 
         let ret = unsafe { WindowsCreateString(ptr, len, &mut handle) };
@@ -40,6 +43,9 @@ impl HString {
             return Err(io::Error::last_os_error());
         }
 
+        // DO NOT REMOVE THIS, this helps ensure the vec lives longer than the call to WindowsCreateString
+        std::mem::drop(vec);
+        
         Ok(HString { __inner: handle })
     }
 }
@@ -91,8 +97,8 @@ impl From<HString> for OsString {
 
 impl<'a> From<&'a str> for HString {
     fn from(string: &str) -> Self {
-        let x = OsStr::new(string).encode_wide().collect();
-        HString::with_wide_string(Some(x)).unwrap()
+        let mut x = OsStr::new(string).encode_wide().collect();
+        unsafe { HString::with_wide_string(x).unwrap() }
     }
 }
 
