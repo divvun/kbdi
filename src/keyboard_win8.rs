@@ -5,6 +5,8 @@ use crate::types::*;
 use indexmap::IndexMap;
 use registry::{Data, Hive, RegKey, Security};
 use std::convert::{TryFrom, TryInto};
+use winapi::um::winnt::WinLocalSystemSid;
+use windows_permissions::{Sid, utilities::current_process_sid};
 
 fn enabled_input_methods() -> InputList {
     let langs = crate::enabled_languages().unwrap();
@@ -258,6 +260,13 @@ fn regenerate_given_registry(
     substitutes_key: RegKey,
     preload_key: RegKey,
 ) {
+    let current_sid = current_process_sid().expect("Failed to get current SID");
+    let nt_auth_system = Sid::well_known_sid(WinLocalSystemSid).unwrap();
+    if current_sid == nt_auth_system {
+        log::debug!("Not refreshing because we're running at NT Authority/System");
+        return
+    }
+
     log::debug!("regenerate_given_registry");
     let lang_keys: Vec<_> = user_profile_key
         .keys()
