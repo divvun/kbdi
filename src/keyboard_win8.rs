@@ -262,6 +262,8 @@ fn regenerate_given_registry(
 ) {
     let current_sid = current_process_sid().expect("Failed to get current SID");
     let nt_auth_system = Sid::well_known_sid(WinLocalSystemSid).unwrap();
+    log::debug!("Running as {:?}", current_sid);
+    log::debug!("nta is {:?}", nt_auth_system);
     if current_sid == nt_auth_system {
         log::debug!("Not refreshing because we're running at NT Authority/System");
         return
