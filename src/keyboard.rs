@@ -1,10 +1,14 @@
+#[cfg(not(feature = "legacy"))]
 use crate::platform::*;
+use crate::registry_snapshot;
+#[cfg(feature = "legacy")]
 use crate::types::InputList;
-use registry::{Data, Hive, RegKey, Security};
-use std::convert::{TryFrom, TryInto};
+#[cfg(feature = "legacy")]
+use std::convert::TryFrom;
 use std::fmt;
 use std::io;
 use std::path::Path;
+use windows_registry::{Key as RegKey, LOCAL_MACHINE};
 
 #[cfg(feature = "legacy")]
 pub use crate::keyboard_legacy::*;
@@ -16,12 +20,16 @@ pub struct KeyboardRegKey {
     regkey: RegKey,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("keyboard already installed")]
     AlreadyExists,
+    #[error("keyboard not found")]
     NotFound,
-    IoError(io::Error),
-    RegErr(registry::key::Error),
+    #[error(transparent)]
+    IoError(#[from] io::Error),
+    #[error(transparent)]
+    RegErr(#[from] windows_result::Error),
 }
 
 pub fn install(
@@ -31,6 +39,9 @@ pub fn install(
     layout_file: &str,
     display_name: Option<&str>,
 ) -> Result<(), Error> {
+    #[cfg(not(feature = "legacy"))]
+    crate::win8::validate_language_tag(tag)?;
+
     log::info!("Checking if already installed");
     if let Some(_) = KeyboardRegKey::find_by_product_code(product_code) {
         return Err(Error::AlreadyExists);
@@ -40,7 +51,16 @@ pub fn install(
     let lang_name = match display_name {
         Some(v) => v.to_owned(),
         #[cfg(not(feature = "legacy"))]
-        None => winlangdb::get_language_names(tag).unwrap().name,
+        None => {
+            winlangdb::get_language_names(tag)
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("unsupported language tag: {tag}"),
+                    )
+                })?
+                .name
+        }
         #[cfg(feature = "legacy")]
         None => layout_name.to_owned(),
     };
@@ -55,9 +75,17 @@ fn enabled_input_methods() -> InputList {
     InputList::try_from("".to_owned()).unwrap()
 }
 
+fn keyboard_layouts_regkey_delete() -> Result<RegKey, Error> {
+    // RegDeleteTree additionally requires DELETE and enumeration rights.
+    // Request these only for this uninstall operation, not ordinary reads.
+    Ok(LOCAL_MACHINE
+        .options()
+        .access(windows_sys::Win32::System::Registry::KEY_ALL_ACCESS)
+        .open(r"SYSTEM\CurrentControlSet\Control\Keyboard Layouts")?)
+}
+
 fn delete_keyboard_regkey(record: KeyboardRegKey) -> Result<(), Error> {
-    let klrk = keyboard_layouts_regkey_write();
-    match klrk.delete(record.regkey_id(), true) {
+    match keyboard_layouts_regkey_delete()?.remove_tree(record.regkey_id()) {
         Ok(_) => Ok(()),
         Err(e) => Err(Error::RegErr(e)),
     }
@@ -65,12 +93,16 @@ fn delete_keyboard_regkey(record: KeyboardRegKey) -> Result<(), Error> {
 
 pub fn uninstall(product_code: &str) -> Result<(), Error> {
     if let Some(record) = KeyboardRegKey::find_by_product_code(product_code) {
-        delete_keyboard_regkey(record)?;
-        crate::clean().unwrap();
+        // Check machine permissions before changing the current user's input list.
+        let layouts = keyboard_layouts_regkey_delete()?;
+        #[cfg(not(feature = "legacy"))]
+        crate::keyboard_win8::disable_keyboard(record.regkey_id())?;
+        layouts.remove_tree(record.regkey_id())?;
         return Ok(());
     }
 
-    Err(Error::NotFound)
+    // Repeated uninstall is a no-op; never run global cleanup for one product.
+    Ok(())
 }
 
 pub fn installed() -> Vec<KeyboardRegKey> {
@@ -78,31 +110,29 @@ pub fn installed() -> Vec<KeyboardRegKey> {
 }
 
 fn keyboard_layouts_regkey_readonly() -> RegKey {
-    Hive::LocalMachine
-        .open(
-            r"SYSTEM\CurrentControlSet\Control\Keyboard Layouts",
-            Security::Read,
-        )
+    LOCAL_MACHINE
+        .open(r"SYSTEM\CurrentControlSet\Control\Keyboard Layouts")
         .unwrap()
 }
 
 fn keyboard_layouts_regkey_write() -> RegKey {
-    Hive::LocalMachine
-        .open(
-            r"SYSTEM\CurrentControlSet\Control\Keyboard Layouts",
-            Security::Write | Security::Read,
-        )
+    LOCAL_MACHINE
+        .options()
+        .read()
+        .write()
+        .open(r"SYSTEM\CurrentControlSet\Control\Keyboard Layouts")
         .unwrap()
 }
 
-pub fn remove_invalid() {
-    remove_duplicate_guids();
-    remove_invalid_dlls();
+pub fn remove_invalid() -> Result<(), Error> {
+    remove_duplicate_guids()?;
+    remove_invalid_dlls()?;
     #[cfg(not(feature = "legacy"))]
-    remove_invalid_kbids();
+    remove_invalid_kbids()?;
+    Ok(())
 }
 
-fn remove_duplicate_guids() {
+fn remove_duplicate_guids() -> Result<(), Error> {
     // Find duplicate GUIDs, clear all but first
     let mut guids = vec![];
     let keys = KeyboardRegKey::installed();
@@ -113,14 +143,15 @@ fn remove_duplicate_guids() {
         };
 
         if guids.contains(&guid) {
-            delete_keyboard_regkey(key).unwrap();
+            delete_keyboard_regkey(key)?;
         } else {
             guids.push(guid);
         }
     }
+    Ok(())
 }
 
-fn remove_invalid_dlls() {
+fn remove_invalid_dlls() -> Result<(), Error> {
     let keys = KeyboardRegKey::installed();
 
     for key in keys {
@@ -130,16 +161,17 @@ fn remove_invalid_dlls() {
         };
 
         if !Path::new(r"C:\Windows\System32").join(layout_file).exists() {
-            delete_keyboard_regkey(key).unwrap();
+            delete_keyboard_regkey(key)?;
         }
     }
+    Ok(())
 }
 
 fn first_available_keyboard_regkey_id(lcid: &str) -> String {
     let regkey = keyboard_layouts_regkey_readonly();
-    let mut kbd_keys: Vec<u16> = regkey
-        .keys()
-        .map(|x| x.unwrap().to_string())
+    let mut kbd_keys: Vec<u16> = registry_snapshot::keys(&regkey)
+        .unwrap()
+        .into_iter()
         .filter(|x| x.starts_with(&"a") && x.ends_with(&lcid))
         .map(|x| {
             let n = u32::from_str_radix(&x, 16).unwrap_or(0u32);
@@ -158,14 +190,17 @@ fn first_available_keyboard_regkey_id(lcid: &str) -> String {
 
 fn first_available_layout_id() -> String {
     let regkey = keyboard_layouts_regkey_readonly();
-    let kbd_keys: Vec<String> = regkey.keys().map(|x| x.unwrap().to_string()).collect();
+    let kbd_keys: Vec<String> = registry_snapshot::keys(&regkey)
+        .unwrap()
+        .into_iter()
+        .collect();
 
     let mut layout_ids: Vec<u32> = kbd_keys
         .into_iter()
         .map(|key| {
-            let kbdkey = &regkey.open(key, Security::Read | Security::Write).unwrap();
-            let layout_idstr: String = match kbdkey.value("Layout Id") {
-                Ok(Data::String(v)) => v.to_string_lossy(),
+            let kbdkey = &regkey.open(key).unwrap();
+            let layout_idstr: String = match kbdkey.get_string("Layout Id") {
+                Ok(v) => v,
                 _ => "0".to_string(),
             };
 
@@ -181,16 +216,19 @@ fn first_available_layout_id() -> String {
 impl KeyboardRegKey {
     pub fn find_by_product_code(product_code: &str) -> Option<KeyboardRegKey> {
         let regkey = keyboard_layouts_regkey_readonly();
-        let keys: Vec<String> = regkey.keys().map(|x| x.unwrap().to_string()).collect();
+        let keys: Vec<String> = registry_snapshot::keys(&regkey)
+            .unwrap()
+            .into_iter()
+            .collect();
         for key in keys.into_iter() {
-            let kl_key = regkey.open(&key, Security::Read).unwrap();
-            let ret: Result<Data, registry::value::Error> = kl_key.value("Layout Product Code");
+            let kl_key = regkey.open(&key).unwrap();
+            let ret: windows_registry::Result<String> = kl_key.get_string("Layout Product Code");
             match ret {
-                Ok(Data::String(s)) if s.to_string_lossy() == product_code => {
+                Ok(s) if s == product_code => {
                     return Some(KeyboardRegKey {
                         id: key.clone(),
                         regkey: kl_key,
-                    })
+                    });
                 }
                 _ => continue,
             }
@@ -201,12 +239,12 @@ impl KeyboardRegKey {
 
     pub fn installed() -> Vec<KeyboardRegKey> {
         let regkey = keyboard_layouts_regkey_readonly();
-        regkey
-            .keys()
-            .map(|x| x.unwrap().to_string())
+        registry_snapshot::keys(&regkey)
+            .unwrap()
+            .into_iter()
             .filter(|x| x.starts_with("a"))
             .map(|x| {
-                let k = regkey.open(&x, Security::Read | Security::Write).unwrap();
+                let k = regkey.open(&x).unwrap();
                 KeyboardRegKey {
                     id: x.to_owned(),
                     regkey: k,
@@ -220,36 +258,36 @@ impl KeyboardRegKey {
     }
 
     pub fn id(&self) -> Option<String> {
-        match self.regkey.value("Layout Id") {
-            Ok(Data::String(v)) => Some(v.to_string_lossy()),
+        match self.regkey.get_string("Layout Id") {
+            Ok(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn product_code(&self) -> Option<String> {
-        match self.regkey.value("Layout Product Code") {
-            Ok(Data::String(v)) => Some(v.to_string_lossy()),
+        match self.regkey.get_string("Layout Product Code") {
+            Ok(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn language_name(&self) -> Option<String> {
-        match self.regkey.value("Custom Language Name") {
-            Ok(Data::String(v)) => Some(v.to_string_lossy()),
+        match self.regkey.get_string("Custom Language Name") {
+            Ok(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn layout_file(&self) -> Option<String> {
-        match self.regkey.value("Layout File") {
-            Ok(Data::String(v)) => Some(v.to_string_lossy()),
+        match self.regkey.get_string("Layout File") {
+            Ok(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn layout_name(&self) -> Option<String> {
-        match self.regkey.value("Layout Text") {
-            Ok(Data::String(v)) => Some(v.to_string_lossy()),
+        match self.regkey.get_string("Layout Text") {
+            Ok(v) => Some(v),
             _ => None,
         }
     }
@@ -271,61 +309,26 @@ impl KeyboardRegKey {
         let layout_id = first_available_layout_id();
 
         info!("D: open regkey");
-        let regkey = keyboard_layouts_regkey_write()
-            .create(&key_name, Security::Read | Security::Write)
-            .unwrap();
+        let regkey = keyboard_layouts_regkey_write().create(&key_name).unwrap();
 
-        info!("D: set regkey vals");
-        regkey
-            .set_value(
+        for (name, value) in [
+            (
                 "Custom Language Display Name",
-                &Data::String(
-                    format!("@%SystemRoot%\\system32\\{},-1100", &layout_file)
-                        .try_into()
-                        .unwrap(),
-                ),
-            )
-            .unwrap();
-        regkey
-            .set_value(
-                "Custom Language Name",
-                &Data::String(display_name.try_into().unwrap()),
-            )
-            .unwrap();
-        regkey
-            .set_value(
+                format!("@%SystemRoot%\\system32\\{},-1100", layout_file),
+            ),
+            ("Custom Language Name", display_name.to_owned()),
+            (
                 "Layout Display Name",
-                &Data::String(
-                    format!("@%SystemRoot%\\system32\\{},-1000", &layout_file)
-                        .try_into()
-                        .unwrap(),
-                ),
-            )
-            .unwrap();
-        regkey
-            .set_value(
-                "Layout File",
-                &Data::String(layout_file.try_into().unwrap()),
-            )
-            .unwrap();
-        regkey
-            .set_value("Layout Id", &Data::String(layout_id.try_into().unwrap()))
-            .unwrap();
-        regkey
-            .set_value("Layout Locale Name", &Data::String(tag.try_into().unwrap()))
-            .unwrap();
-        regkey
-            .set_value(
-                "Layout Product Code",
-                &Data::String(product_code.try_into().unwrap()),
-            )
-            .unwrap();
-        regkey
-            .set_value(
-                "Layout Text",
-                &Data::String(layout_name.try_into().unwrap()),
-            )
-            .unwrap();
+                format!("@%SystemRoot%\\system32\\{},-1000", layout_file),
+            ),
+            ("Layout File", layout_file.to_owned()),
+            ("Layout Id", layout_id),
+            ("Layout Locale Name", tag.to_owned()),
+            ("Layout Product Code", product_code.to_owned()),
+            ("Layout Text", layout_name.to_owned()),
+        ] {
+            regkey.set_string(name, value).unwrap();
+        }
 
         KeyboardRegKey {
             id: key_name.clone(),

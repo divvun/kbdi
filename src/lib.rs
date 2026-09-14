@@ -1,3 +1,5 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 #[macro_use]
 extern crate log;
 
@@ -8,6 +10,7 @@ mod keyboard_legacy;
 mod keyboard_win8;
 mod language;
 pub mod platform;
+mod registry_snapshot;
 mod types;
 mod winrust;
 
@@ -32,19 +35,12 @@ pub enum Error {
     #[error("IO error")]
     Io(#[from] std::io::Error),
 
-    #[error("Path error")]
-    Path(#[from] pathos::Error),
-
     #[error("Set logger error")]
     SetLoggerError(#[from] log::SetLoggerError),
 }
 
 pub fn setup_logger() -> Result<(), Error> {
-    let log_path = if whoami::username() == "SYSTEM" {
-        pathos::system::app_log_dir("kbdi")
-    } else {
-        pathos::user::app_log_dir("kbdi")?
-    };
+    let log_path = platform::native::log_directory()?;
 
     std::fs::create_dir_all(&log_path)?;
 

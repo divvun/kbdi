@@ -14,6 +14,6 @@ pub fn query_language(tag: &str) -> String {
 }
 
 pub fn clean() -> Result<(), String> {
-    crate::keyboard::remove_invalid();
+    crate::keyboard::remove_invalid().map_err(|error| error.to_string())?;
     Ok(())
 }

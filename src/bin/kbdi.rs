@@ -1,37 +1,34 @@
+use clap::Parser;
 use kbdi::*;
-use structopt::StructOpt;
 
-#[derive(StructOpt)]
-#[structopt(
-    about = "Configure Windows registry values for keyboards",
-    author = "Brendan Molloy <brendan@bbqsrc.net>"
-)]
+#[derive(Debug, Parser)]
+#[command(about = "Configure Windows registry values for keyboards")]
 enum Opt {
-    #[structopt(
+    #[command(
         name = "keyboard_install",
         about = "Installs a keyboard layout to the registry"
     )]
     KeyboardInstall {
         /// Language tag in BCP 47 format (eg: sma-Latn-NO)
-        #[structopt(short, long)]
+        #[arg(short, long)]
         tag: String,
         /// Layout name (eg: Skolt Sami (Norway))
-        #[structopt(short = "n", long)]
+        #[arg(short = 'n', long)]
         layout: String,
         /// Product code GUID (eg: {42c3de12-28...})
-        #[structopt(short, long)]
+        #[arg(short, long)]
         guid: String,
         /// Name of keyboard DLL (eg: kbdfoo01.dll)
-        #[structopt(short, long)]
+        #[arg(short, long)]
         dll: String,
         /// Native language name, if required (eg: Norsk)
-        #[structopt(short, long)]
+        #[arg(short, long)]
         lang: Option<String>,
         /// Enable keyboard immediately after installing
-        #[structopt(short, long)]
+        #[arg(short, long)]
         enable: bool,
     },
-    #[structopt(
+    #[command(
         name = "keyboard_uninstall",
         about = "Uninstalls a keyboard layout from the registry"
     )]
@@ -39,24 +36,24 @@ enum Opt {
         /// Product code GUID (eg: {42c3de12-28...})
         guid: String,
     },
-    #[structopt(name = "keyboard_enable", about = "Enables a keyboard for a user")]
+    #[command(name = "keyboard_enable", about = "Enables a keyboard for a user")]
     KeyboardEnable {
         /// Language tag in BCP 47 format (eg: sma-Latn-NO)
-        #[structopt(short, long)]
+        #[arg(short, long)]
         tag: String,
         /// Product code GUID (eg: {42c3de12-28...})
-        #[structopt(short, long)]
+        #[arg(short, long)]
         guid: String,
         /// Native language name, if required (eg: Norsk)
-        #[structopt(short, long)]
+        #[arg(short, long)]
         lang: Option<String>,
         /// Enable keyboard for the default user (requires admin)
-        #[structopt(short, long)]
+        #[arg(short, long)]
         default_user: bool,
     },
-    #[structopt(name = "registry_regen", about = "Enable a language with provided tag")]
+    #[command(name = "registry_regen", about = "Enable a language with provided tag")]
     RegistryRegen,
-    #[structopt(
+    #[command(
         name = "language_enable",
         about = "Enable a language with provided tag"
     )]
@@ -64,37 +61,40 @@ enum Opt {
         /// Language tag in BCP 47 format (eg: sma-Latn-NO)
         tag: String,
     },
-    #[structopt(name = "language_query", about = "Get data about language tag")]
+    #[command(name = "language_query", about = "Get data about language tag")]
     LanguageQuery {
         /// Language tag in BCP 47 format (eg: sma-Latn-NO)
         tag: String,
     },
-    #[structopt(
+    #[command(
         name = "language_list",
         about = "Lists all languages enabled for the current user"
     )]
     LanguageList,
-    #[structopt(
+    #[command(
         name = "keyboard_list",
         about = "Lists all enabled keyboards for the user"
     )]
     KeyboardList,
-    #[structopt(
+    #[command(
         name = "keyboard_enabled",
         about = "Lists all enabled keyboards for the user"
     )]
     KeyboardEnabled,
-    #[structopt(about = "Remove empty languages and invalid keyboards")]
+    #[command(about = "Remove empty languages and invalid keyboards")]
     Clean,
 }
 
 fn main() {
+    let opt = Opt::parse();
     kbdi::setup_logger().unwrap_or_else(|_| eprintln!("Logger failed to init."));
-    log::info!("Starting Divvun Keyboard Installer...");
+    if let Err(error) = run(opt) {
+        eprintln!("kbdi: {error}");
+        std::process::exit(1);
+    }
+}
 
-    let _guard = option_env!("SENTRY_DSN").map(|var| sentry::init(var));
-    let opt = Opt::from_args();
-
+fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
     match opt {
         Opt::KeyboardInstall {
             tag,
@@ -104,57 +104,150 @@ fn main() {
             lang,
             enable,
         } => {
-            log::info!("Installing keyboard...");
             match keyboard::install(&tag, &layout, &guid, &dll, lang.as_deref()) {
-                Ok(_) => (),
-                Err(err) => match err {
-                    keyboard::Error::AlreadyExists => {
-                        log::info!("Keyboard already installed.");
-                    }
-                    _ => panic!(err),
-                },
+                Ok(()) | Err(keyboard::Error::AlreadyExists) => (),
+                Err(error) => return Err(error.into()),
             }
             if enable {
-                log::info!("Enabling keyboard...");
-                keyboard::enable(&tag, &guid, lang.as_deref()).unwrap();
+                keyboard::enable(&tag, &guid, lang.as_deref())?;
             }
         }
-        Opt::KeyboardUninstall { guid } => {
-            keyboard::uninstall(&guid).unwrap();
-        }
+        Opt::KeyboardUninstall { guid } => keyboard::uninstall(&guid)?,
         Opt::KeyboardEnable {
             tag,
             guid,
             lang,
             default_user,
         } => {
-            keyboard::enable(&tag, &guid, lang.as_deref()).unwrap();
+            if default_user {
+                eprintln!("--default-user is not implemented; no keyboard changes were made");
+                std::process::exit(2);
+            }
+            keyboard::enable(&tag, &guid, lang.as_deref())?;
         }
-        Opt::RegistryRegen => {
-            keyboard::regenerate_registry();
-        }
-        Opt::LanguageEnable { tag } => {
-            enable_language(&tag).unwrap();
-        }
-        Opt::LanguageQuery { tag } => {
-            println!("{}", query_language(&tag));
-        }
-        Opt::LanguageList => {
-            let languages = enabled_languages().unwrap().join(" ");
-            println!("{}", &languages);
-        }
+        Opt::RegistryRegen => keyboard::regenerate_registry(),
+        Opt::LanguageEnable { tag } => enable_language(&tag)?,
+        Opt::LanguageQuery { tag } => println!("{}", query_language(&tag)),
+        Opt::LanguageList => println!("{}", enabled_languages()?.join(" ")),
         Opt::KeyboardList => {
-            for k in keyboard::installed().iter() {
-                println!("{}", k);
+            for keyboard in keyboard::installed() {
+                println!("{keyboard}");
             }
         }
         Opt::KeyboardEnabled => {
-            for k in enabled_keyboards().iter() {
-                println!("{:?}", k);
+            for keyboard in enabled_keyboards()? {
+                println!("{keyboard:?}");
             }
         }
-        Opt::Clean => {
-            clean().unwrap();
+        Opt::Clean => clean().map_err(std::io::Error::other)?,
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn parser_definition_is_valid_and_has_no_author() {
+        Opt::command().debug_assert();
+        assert!(Opt::command().get_author().is_none());
+        assert_eq!(
+            Opt::try_parse_from(["kbdi", "--help"]).unwrap_err().kind(),
+            clap::error::ErrorKind::DisplayHelp
+        );
+    }
+
+    #[test]
+    fn installer_command_names_and_flags_are_preserved() {
+        let parsed = Opt::try_parse_from([
+            "kbdi",
+            "keyboard_install",
+            "-t",
+            "sma-Latn-NO",
+            "-n",
+            "Sámi keyboard",
+            "-g",
+            "{guid}",
+            "-d",
+            "kbdfoo.dll",
+            "-l",
+            "Sámi",
+            "-e",
+        ])
+        .unwrap();
+        let Opt::KeyboardInstall {
+            tag,
+            layout,
+            guid,
+            dll,
+            lang,
+            enable,
+        } = parsed
+        else {
+            panic!("wrong command");
+        };
+        assert_eq!(
+            (
+                tag.as_str(),
+                layout.as_str(),
+                guid.as_str(),
+                dll.as_str(),
+                lang.as_deref(),
+                enable
+            ),
+            (
+                "sma-Latn-NO",
+                "Sámi keyboard",
+                "{guid}",
+                "kbdfoo.dll",
+                Some("Sámi"),
+                true
+            )
+        );
+        assert!(matches!(
+            Opt::try_parse_from(["kbdi", "keyboard_uninstall", "{guid}"]).unwrap(),
+            Opt::KeyboardUninstall { .. }
+        ));
+        assert!(matches!(
+            Opt::try_parse_from([
+                "kbdi",
+                "keyboard_enable",
+                "--tag",
+                "se",
+                "--guid",
+                "{guid}",
+                "--default-user"
+            ])
+            .unwrap(),
+            Opt::KeyboardEnable {
+                default_user: true,
+                ..
+            }
+        ));
+        for command in [
+            "registry_regen",
+            "language_list",
+            "keyboard_list",
+            "keyboard_enabled",
+            "clean",
+        ] {
+            Opt::try_parse_from(["kbdi", command]).unwrap();
+        }
+        for command in ["language_enable", "language_query"] {
+            Opt::try_parse_from(["kbdi", command, "se"]).unwrap();
+        }
+    }
+
+    #[test]
+    fn incomplete_or_unknown_commands_are_rejected() {
+        for args in [
+            vec!["kbdi"],
+            vec!["kbdi", "keyboard_install", "-t", "se"],
+            vec!["kbdi", "keyboard_enable", "--unknown"],
+        ] {
+            assert!(Opt::try_parse_from(args).is_err());
         }
     }
 }

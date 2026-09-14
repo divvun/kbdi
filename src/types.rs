@@ -32,8 +32,20 @@ impl TryFrom<&str> for InputListItem {
     fn try_from(string: &str) -> Result<InputListItem, ()> {
         log::trace!("InputListItem try_from: {}", &string);
 
-        let lang_id = u16::from_str_radix(&string[0..4], 16).map_err(|_| ())?;
-        let tip_id = u32::from_str_radix(&string[5..13], 16).map_err(|_| ())?;
+        let (lang, tip) = string.split_once(':').ok_or(())?;
+        let lang = lang
+            .strip_prefix("0x")
+            .or_else(|| lang.strip_prefix("0X"))
+            .unwrap_or(lang);
+        let tip = tip
+            .strip_prefix("0x")
+            .or_else(|| tip.strip_prefix("0X"))
+            .unwrap_or(tip);
+        if lang.len() != 4 || tip.len() != 8 {
+            return Err(());
+        }
+        let lang_id = u16::from_str_radix(lang, 16).map_err(|_| ())?;
+        let tip_id = u32::from_str_radix(tip, 16).map_err(|_| ())?;
 
         Ok(InputListItem { lang_id, tip_id })
     }
@@ -46,6 +58,7 @@ impl TryFrom<String> for InputList {
         Ok(InputList {
             __inner: string
                 .split(";")
+                .filter(|s| !s.is_empty())
                 .map(|s| InputListItem::try_from(s))
                 .collect::<Result<Vec<_>, _>>()?,
         })
@@ -109,5 +122,36 @@ impl InputListItem {
 
     pub fn kbid(&self) -> String {
         format!("{:08X}", self.tip_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_and_text_service_inputs_do_not_panic_or_truncate() {
+        for value in [
+            "",
+            "0409",
+            "0409:1",
+            "0409:a0000409extra",
+            "0409:{guid}{guid}",
+            "\u{e9}\u{e9}:12345678",
+            "0409/a0000409",
+        ] {
+            assert!(InputListItem::try_from(value).is_err(), "{value}");
+        }
+        let input = InputListItem::try_from("0409:A0000409").unwrap();
+        assert_eq!(
+            InputListItem::try_from(String::from(input.clone()).as_str()).unwrap(),
+            input
+        );
+        assert!(
+            InputList::try_from(String::new())
+                .unwrap()
+                .inner()
+                .is_empty()
+        );
     }
 }

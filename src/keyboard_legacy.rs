@@ -1,8 +1,9 @@
 use crate::keyboard::{Error, KeyboardRegKey};
 use crate::platform::*;
+use crate::registry_snapshot;
 use crate::types::*;
-use registry::{Data, Hive, RegKey, Security};
 use std::convert::TryFrom;
+use windows_registry::{CURRENT_USER, Key as RegKey, USERS};
 
 pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
     let record = match KeyboardRegKey::find_by_product_code(product_code) {
@@ -15,7 +16,7 @@ pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
     let tip = InputList::try_from(format!("{:04X}:{}", lcid, record.regkey_id())).unwrap();
 
     info!("D: Install layout, flag 0");
-    input::install_layout(tip, 0x0).unwrap();
+    input::install_layout(tip, 0x0)?;
     // info!("D: Enable keyboard layout");
     // winuser::load_keyboard_layout(record.regkey_id());
     Ok(())
@@ -23,38 +24,37 @@ pub fn enable(tag: &str, product_code: &str) -> Result<(), Error> {
 
 fn base_regkey(is_all_users: bool) -> RegKey {
     match is_all_users {
-        true => Hive::Users
-            .open(".DEFAULT", Security::Read | Security::Write)
-            .unwrap(),
-        false => Hive::CurrentUser
-            .open("", Security::Read | Security::Write)
-            .unwrap(),
+        true => USERS.options().read().write().open(".DEFAULT").unwrap(),
+        false => CURRENT_USER.options().read().write().open("").unwrap(),
     }
 }
 
 fn kbd_layout_sub_regkey(is_all_users: bool) -> RegKey {
     base_regkey(is_all_users)
-        .open(
-            r"Keyboard Layout\Substitutes",
-            Security::Read | Security::Write,
-        )
+        .options()
+        .read()
+        .write()
+        .open(r"Keyboard Layout\Substitutes")
         .unwrap()
 }
 
 fn kbd_layout_preload_regkey(is_all_users: bool) -> RegKey {
     base_regkey(is_all_users)
-        .open(r"Keyboard Layout\Preload", Security::Read | Security::Write)
+        .options()
+        .read()
+        .write()
+        .open(r"Keyboard Layout\Preload")
         .unwrap()
 }
 
 /// Substitute IDs begin with 0000, then increment to d001, and continue incrementing dXXX.
 fn next_substitute_id(suffix: u16) -> u32 {
-    let prefix: u16 = Hive::CurrentUser
-        .open(r"Keyboard Layout\Substitutes", Security::Read)
+    let key = CURRENT_USER.open(r"Keyboard Layout\Substitutes").unwrap();
+    let prefix: u16 = registry_snapshot::values(&key)
         .unwrap()
-        .values()
+        .into_iter()
         .fold(0u16, |acc, x| {
-            let name = x.unwrap().name().to_string_lossy();
+            let name = x.0;
 
             if let Ok(val) = u32::from_str_radix(&name, 16) {
                 if (val as u16) == suffix {
@@ -77,19 +77,17 @@ fn next_substitute_id(suffix: u16) -> u32 {
 
 #[cfg(feature = "legacy")]
 fn next_preload_id(is_all_users: bool) -> u32 {
-    base_regkey(is_all_users)
-        .open(r"Keyboard Layout\Preload", Security::Read)
+    let key = base_regkey(is_all_users)
+        .open(r"Keyboard Layout\Preload")
+        .unwrap();
+    registry_snapshot::values(&key)
         .unwrap()
-        .values()
+        .into_iter()
         .fold(1u32, |acc, x| {
-            let name = x.unwrap().name().to_string_lossy();
+            let name = x.0;
 
             if let Ok(v) = u32::from_str_radix(&name, 10) {
-                if v >= acc {
-                    v + 1
-                } else {
-                    acc
-                }
+                if v >= acc { v + 1 } else { acc }
             } else {
                 acc
             }

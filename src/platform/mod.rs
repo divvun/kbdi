@@ -1,5 +1,6 @@
 #[cfg(not(feature = "legacy"))]
 pub mod bcp47langs;
+pub(crate) mod native;
 pub mod sys;
 #[cfg(not(feature = "legacy"))]
 pub mod winlangdb;
@@ -10,7 +11,8 @@ pub mod input {
     use crate::types::InputList;
     use crate::winrust::to_wide_string;
     use std::io;
-    use std::ptr::null;
+
+    pub const ILOT_UNINSTALL: i32 = 0x00000001;
 
     pub fn install_layout(inputs: InputList, flag: i32) -> Result<(), io::Error> {
         log::debug!("install_layout({:?}, {:?})", inputs, flag);
@@ -20,30 +22,47 @@ pub mod input {
         let winput = to_wide_string(&input_string);
 
         // let ret = unsafe { sys::input::InstallLayoutOrTipUserReg(null(), null(), null(), winput.as_ptr(), flag) };
-        let ret = unsafe { sys::input::InstallLayoutOrTip(winput.as_ptr(), flag) };
-        if ret < 0 {
-            return Err(io::Error::last_os_error());
-        }
+        let ret = unsafe { sys::input::InstallLayoutOrTip(winput.as_ptr(), flag)? };
+        check_install_result(ret)
+    }
 
+    fn check_install_result(ret: i32) -> io::Result<()> {
+        if ret == 0 {
+            // InstallLayoutOrTip returns BOOL, and does not promise GetLastError.
+            return Err(io::Error::other("InstallLayoutOrTip failed"));
+        }
         Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        #[test]
+        fn install_layout_uses_boolean_success_semantics() {
+            assert!(check_install_result(0).is_err());
+            assert!(check_install_result(1).is_ok());
+            assert!(check_install_result(-1).is_ok());
+        }
     }
 }
 
 pub mod winuser {
     use crate::winrust::to_wide_string;
-    use winapi::um::winuser;
+    use windows_sys::Win32::UI::{
+        Input::KeyboardAndMouse as keyboard, WindowsAndMessaging as winuser,
+    };
 
     pub fn load_keyboard_layout(klid: &str) {
         unsafe {
-            winuser::LoadKeyboardLayoutW(
+            keyboard::LoadKeyboardLayoutW(
                 to_wide_string(klid).as_ptr(),
-                winuser::KLF_ACTIVATE | winuser::KLF_SETFORPROCESS,
+                keyboard::KLF_ACTIVATE | keyboard::KLF_SETFORPROCESS,
             )
         };
     }
 
     pub fn current_keyboard() -> isize {
-        unsafe { winuser::GetKeyboardLayout(0) as isize }
+        unsafe { keyboard::GetKeyboardLayout(0) as isize }
     }
 
     pub fn set_active_keyboard(layout: isize) {
@@ -61,8 +80,11 @@ pub mod winuser {
 #[cfg(not(feature = "legacy"))]
 pub mod coreglobconfig {
     use super::*;
-    
+
     pub fn sync_language_data() {
-        unsafe { sys::coreglobconfig::SyncLanguageDataToCloud() }
+        // Synchronization is best effort; unavailable APIs must not panic.
+        if let Err(error) = unsafe { sys::coreglobconfig::SyncLanguageDataToCloud() } {
+            log::warn!("Language synchronization unavailable: {error}");
+        }
     }
 }

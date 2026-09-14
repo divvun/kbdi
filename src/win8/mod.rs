@@ -1,4 +1,5 @@
-use registry::{Hive, Security};
+use crate::registry_snapshot;
+use windows_registry::CURRENT_USER;
 
 use crate::platform::*;
 use std::io;
@@ -26,32 +27,41 @@ pub fn enabled_languages() -> Result<Vec<String>, io::Error> {
 type LangKeyboards = (String, Vec<String>);
 
 pub fn enabled_keyboards() -> Result<Vec<LangKeyboards>, io::Error> {
-    log::debug!("enabled_keyboards()");
-    let langs = enabled_languages()?;
-    Ok(langs
+    enabled_languages()?
         .into_iter()
         .map(|lang| {
-            let imes = bcp47langs::get_user_language_input_methods(&lang).unwrap();
-            (lang, imes)
+            let imes = bcp47langs::get_user_language_input_methods(&lang)?;
+            Ok((lang, imes))
         })
-        .collect())
+        .collect()
+}
+
+pub(crate) fn validate_language_tag(tag: &str) -> io::Result<()> {
+    if tag.is_empty() || tag.contains(['\0', ';']) || winlangdb::get_language_names(tag).is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("unsupported language tag: {tag:?}"),
+        ));
+    }
+    Ok(())
 }
 
 // TODO: reimplement support for adding native language name, optionally
 pub fn enable_language(tag: &str) -> Result<(), io::Error> {
+    validate_language_tag(tag)?;
     log::debug!("enable_languages({:?})", tag);
     let mut langs = enabled_languages()?;
     log::trace!("Enabled languages: {:?}", langs);
     let lang = tag.to_owned();
 
-    if langs.contains(&lang) {
+    if langs.iter().any(|value| value.eq_ignore_ascii_case(&lang)) {
         log::debug!("Lang found in langs, doing nothing.");
         return Ok(());
     }
 
     langs.push(lang);
 
-    set_user_languages(&langs).unwrap();
+    set_user_languages(&langs).map_err(io::Error::other)?;
 
     // winlangdb::ensure_language_profile_exists()?;
     //    .or_else(|_| Err("Error while setting languages.".to_owned()))
@@ -60,16 +70,9 @@ pub fn enable_language(tag: &str) -> Result<(), io::Error> {
 
 fn set_user_languages(tags: &[String]) -> Result<(), String> {
     log::debug!("set_user_languages({:?})", &tags);
-    let valid_tags: Vec<String> = tags
-        .iter()
-        .flat_map(|t| winlangdb::get_language_names(t))
-        .map(|t| t.tag)
-        .collect();
-
-    log::trace!("valid_tags: {:?}", &valid_tags);
-
-    winlangdb::set_user_languages(&valid_tags)
-        .or_else(|_| Err("Failed enabling languages".to_owned()))?;
+    // Existing language profiles must survive even when name lookup is unavailable.
+    // Only newly requested tags are validated by enable_language.
+    winlangdb::set_user_languages(tags).map_err(|error| error.to_string())?;
 
     // Workaround for bug in Windows 10 20H2
     win10_20h2_workaround()?;
@@ -78,23 +81,27 @@ fn set_user_languages(tags: &[String]) -> Result<(), String> {
 }
 
 fn win10_20h2_workaround() -> Result<(), String> {
-    let user_profile_key = Hive::CurrentUser
-        .open(
-            r"Control Panel\International\User Profile",
-            Security::Read | Security::Write,
-        )
-        .unwrap();
+    let user_profile_key = CURRENT_USER
+        .options()
+        .read()
+        .write()
+        .open(r"Control Panel\International\User Profile")
+        .map_err(|error| error.to_string())?;
 
-    for subkey in user_profile_key
-        .keys()
-        .filter_map(Result::ok)
-        .map(|x| x.open(Security::Read | Security::Write))
-        .filter_map(Result::ok)
-    {
-        if subkey.value("FeaturesToInstall").is_err() {
-            log::debug!("20H2 Workaround: setting FeaturesToInstall to 0xe3 for {}", subkey.to_string());
+    for name in registry_snapshot::keys(&user_profile_key).map_err(|e| e.to_string())? {
+        let subkey = user_profile_key
+            .options()
+            .read()
+            .write()
+            .open(&name)
+            .map_err(|e| e.to_string())?;
+        if subkey.get_value("FeaturesToInstall").is_err() {
+            log::debug!(
+                "20H2 Workaround: setting FeaturesToInstall to 0xe3 for {}",
+                name
+            );
             subkey
-                .set_value("FeaturesToInstall", &registry::Data::U32(0xe3))
+                .set_u32("FeaturesToInstall", 0xe3)
                 .map_err(|e| format!("{:?}", e))?;
         }
     }
@@ -104,21 +111,38 @@ fn win10_20h2_workaround() -> Result<(), String> {
 
 fn disable_empty_languages() -> Result<(), io::Error> {
     let langs = enabled_languages()?;
-    let filtered_langs: Vec<String> = langs
-        .into_iter()
-        .filter(|tag| {
-            let imes = bcp47langs::get_user_language_input_methods(&tag).unwrap_or(vec![]);
-            imes.len() > 0
-        })
-        .collect();
-
-    set_user_languages(&filtered_langs).unwrap();
+    let mut filtered_langs = Vec::new();
+    for tag in &langs {
+        if !bcp47langs::get_user_language_input_methods(tag)?.is_empty() {
+            filtered_langs.push(tag.clone());
+        }
+    }
+    // Do not attempt to replace the language list with an empty list.
+    if !filtered_langs.is_empty() && filtered_langs != langs {
+        set_user_languages(&filtered_langs).map_err(io::Error::other)?;
+    }
     Ok(())
-    //.or_else(|_| Err("Error while setting languages.".to_owned()))
 }
 
 pub fn clean() -> Result<(), String> {
-    crate::keyboard::remove_invalid();
-    disable_empty_languages().unwrap();
+    crate::keyboard::remove_invalid().map_err(|error| error.to_string())?;
+    disable_empty_languages().map_err(|error| error.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn unsupported_language_validation_is_read_only() {
+        let before = enabled_languages().unwrap();
+        for tag in ["", "en-US;ru", "en-US\0ru", "rus-Cyrl-NO", "rus-Cyrl-DE"] {
+            assert_eq!(
+                validate_language_tag(tag).unwrap_err().kind(),
+                io::ErrorKind::InvalidInput
+            );
+        }
+        assert_eq!(enabled_languages().unwrap(), before);
+        validate_language_tag("en-US").unwrap();
+    }
 }

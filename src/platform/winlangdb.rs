@@ -1,9 +1,9 @@
 use crate::platform::*;
 use crate::types::*;
-use crate::winrust::hstring::*;
 use crate::winrust::*;
 use std::fmt;
 use std::{convert::TryFrom, io};
+use windows_core::HSTRING;
 
 pub struct LanguageData {
     pub tag: String,
@@ -40,6 +40,7 @@ pub fn get_language_names(tag: &str) -> Option<LanguageData> {
             c.as_mut_ptr(),
             d.as_mut_ptr(),
         )
+        .ok()?
     };
 
     if ret != 0 {
@@ -70,8 +71,8 @@ pub fn set_user_languages(tags: &[String]) -> Result<(), io::Error> {
     // DO NOT REMOVE WITHOUT SETTING ASIDE TWO DAYS TO REALISE YOU HAVE MADE A HORRIBLE ERROR.
     let joined = format!("{};{}", &tags[0], tags.join(";"));
     log::trace!("Joined: {:?}", &joined);
-    let handle = HString::from(joined);
-    let ret = unsafe { sys::winlangdb::SetUserLanguages(';' as u16, *handle) };
+    let handle = HSTRING::from(joined);
+    let ret = unsafe { sys::winlangdb::SetUserLanguages(';' as u16, (&handle).into())? };
 
     if ret != 0 {
         let err = io::Error::last_os_error();
@@ -84,22 +85,31 @@ pub fn set_user_languages(tags: &[String]) -> Result<(), io::Error> {
 }
 
 pub fn transform_input_methods(methods: InputList, tag: &str) -> InputList {
-    let hmethods = HString::from(String::from(methods));
-    let htag = HString::from(tag);
+    let hmethods = HSTRING::from(String::from(methods));
+    let htag = HSTRING::from(tag);
     let out = unsafe {
-        let mut out = HString::null();
-        sys::winlangdb::TransformInputMethodsForLanguage(*hmethods, *htag, &mut *out);
+        let mut out = HSTRING::new();
+        let result = sys::winlangdb::TransformInputMethodsForLanguage(
+            (&hmethods).into(),
+            (&htag).into(),
+            (&mut out).into(),
+        )
+        .expect("input method transformation API unavailable");
+        super::native::hresult(result).expect("input method transformation failed");
         out
     };
-    InputList::try_from(String::from(out)).unwrap()
+    InputList::try_from(out.to_string_lossy()).unwrap()
 }
 
 pub fn default_input_method(tag: &str) -> InputList {
-    let htag = HString::from(tag);
+    let htag = HSTRING::from(tag);
     let out = unsafe {
-        let mut out = HString::null();
-        sys::winlangdb::GetDefaultInputMethodForLanguage(*htag, &mut *out);
+        let mut out = HSTRING::new();
+        let result =
+            sys::winlangdb::GetDefaultInputMethodForLanguage((&htag).into(), (&mut out).into())
+                .expect("default input method API unavailable");
+        super::native::hresult(result).expect("default input method query failed");
         out
     };
-    InputList::try_from(String::from(out)).unwrap()
+    InputList::try_from(out.to_string_lossy()).unwrap()
 }

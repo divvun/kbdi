@@ -1,37 +1,34 @@
+use clap::Parser;
 use kbdi::*;
-use structopt::StructOpt;
 
-#[derive(StructOpt)]
-#[structopt(
-    about = "Configure Windows registry values for keyboards",
-    author = "Brendan Molloy <brendan@bbqsrc.net>"
-)]
+#[derive(Debug, Parser)]
+#[command(about = "Configure Windows registry values for keyboards")]
 enum Opt {
-    #[structopt(
+    #[command(
         name = "keyboard_install",
         about = "Installs a keyboard layout to the registry"
     )]
     KeyboardInstall {
         /// Language tag in BCP 47 format (eg: sma-Latn-NO)
-        #[structopt(short, long)]
+        #[arg(short, long)]
         tag: String,
         /// Layout name (eg: Skolt Sami (Norway))
-        #[structopt(short = "n", long)]
+        #[arg(short = 'n', long)]
         layout: String,
         /// Product code GUID (eg: {42c3de12-28...})
-        #[structopt(short, long)]
+        #[arg(short, long)]
         guid: String,
         /// Name of keyboard DLL (eg: kbdfoo01.dll)
-        #[structopt(short, long)]
+        #[arg(short, long)]
         dll: String,
         /// Native language name, if required (eg: Norsk)
-        #[structopt(short, long)]
+        #[arg(short, long)]
         lang: Option<String>,
         /// Enable keyboard immediately after installing
-        #[structopt(short, long)]
+        #[arg(short, long)]
         enable: bool,
     },
-    #[structopt(
+    #[command(
         name = "keyboard_uninstall",
         about = "Uninstalls a keyboard layout from the registry"
     )]
@@ -39,31 +36,68 @@ enum Opt {
         /// Product code GUID (eg: {42c3de12-28...})
         guid: String,
     },
-    #[structopt(name = "keyboard_enable", about = "Enables a keyboard for a user")]
+    #[command(name = "keyboard_enable", about = "Enables a keyboard for a user")]
     KeyboardEnable {
         /// Language tag in BCP 47 format (eg: sma-Latn-NO)
-        #[structopt(short, long)]
+        #[arg(short, long)]
         tag: String,
         /// Product code GUID (eg: {42c3de12-28...})
-        #[structopt(short, long)]
+        #[arg(short, long)]
         guid: String,
     },
-    #[structopt(name = "language_query", about = "Get data about language tag")]
+    #[command(name = "language_query", about = "Get data about language tag")]
     LanguageQuery {
         /// Language tag in BCP 47 format (eg: sma-Latn-NO)
         tag: String,
     },
-    #[structopt(
+    #[command(
         name = "keyboard_list",
         about = "Lists all keyboards installed on the system"
     )]
     KeyboardList,
-    #[structopt(about = "Remove empty languages and invalid keyboards")]
+    #[command(about = "Remove empty languages and invalid keyboards")]
     Clean,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+    #[test]
+    fn legacy_installer_command_contract() {
+        Opt::command().debug_assert();
+        assert!(Opt::command().get_author().is_none());
+        assert!(matches!(
+            Opt::try_parse_from([
+                "kbdi-legacy",
+                "keyboard_install",
+                "-t",
+                "se",
+                "-n",
+                "Sámi",
+                "-g",
+                "{guid}",
+                "-d",
+                "kbdfoo.dll",
+                "-e"
+            ])
+            .unwrap(),
+            Opt::KeyboardInstall { enable: true, .. }
+        ));
+        assert!(matches!(
+            Opt::try_parse_from(["kbdi-legacy", "keyboard_enable", "-t", "se", "-g", "{guid}"])
+                .unwrap(),
+            Opt::KeyboardEnable { .. }
+        ));
+        for command in ["keyboard_list", "clean"] {
+            Opt::try_parse_from(["kbdi-legacy", command]).unwrap();
+        }
+        assert!(Opt::try_parse_from(["kbdi-legacy", "keyboard_install"]).is_err());
+    }
+}
+
 fn main() {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
     match opt {
         Opt::KeyboardInstall {
@@ -81,7 +115,7 @@ fn main() {
                     keyboard::Error::AlreadyExists => {
                         println!("Keyboard already installed.");
                     }
-                    _ => panic!(err),
+                    _ => panic!("{err:?}"),
                 },
             }
             if enable {

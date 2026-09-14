@@ -1,10 +1,11 @@
 [package]
 name = "kbdi"
 version = "0.5.1"
-authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+authors = []
 license = "Apache-2.0 OR MIT"
 publish = false
-edition = "2018"
+edition = "2024"
+rust-version = "1.98.1"
 
 [features]
 legacy = []
@@ -22,28 +23,20 @@ doc = false
 path = "src/bin/kbdi.rs"
 
 [dependencies]
-log = "*"
-env_logger = "0.8.1"
-libloading = "0.5.0"
-lazy_static = "1.2.0"
-sentry = "0.12.0"
-winapi = { version = "0.3", features = ["everything"] }
-registry = {git = "https://github.com/bbqsrc/registry-rs",  branch="main"}
-pathos = "0.3.0-pre.1"
-fern = "0.6.0"
-whoami = "0.9.0"
-thiserror = "1.0.21"
-chrono = "0.4.19"
-indexmap = "1.6.0"
-windows-permissions = "0.2"
-
-[dependencies.structopt]
-version = "0.3.0"
-default-features = false
-features = []
+log = "0.4.34"
+libloading = "0.9.0"
+windows-registry = "0.100.0"
+windows-result = "0.100.0"
+fern = "0.7.1"
+thiserror = "2.0.20"
+chrono = "0.4.45"
+indexmap = "2.14.2"
+clap = { version = "4.6.6", features = ["derive"] }
+windows-core = "0.100.0"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_System_Com", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [build-dependencies]
-embed-resource = ">=1.0.0,<1.1.4"
+embed-resource = "3.0.11"
 
 [profile.release]
 lto = true

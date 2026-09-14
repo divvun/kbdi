@@ -1,258 +1,123 @@
 use crate::keyboard::{Error, KeyboardRegKey};
-use crate::language::LanguageRegKey;
 use crate::platform::*;
+use crate::registry_snapshot;
 use crate::types::*;
-use indexmap::IndexMap;
-use registry::{Data, Hive, RegKey, Security};
-use std::convert::{TryFrom, TryInto};
-use winapi::um::winnt::WinLocalSystemSid;
-use windows_permissions::{Sid, utilities::current_process_sid};
+use std::convert::TryFrom;
+use std::io;
+use windows_registry::{CURRENT_USER, Key as RegKey};
 
-fn enabled_input_methods() -> InputList {
-    let langs = crate::enabled_languages().unwrap();
-    let mut imes: Vec<String> = vec![];
-    for lang in langs {
-        imes.append(&mut bcp47langs::get_user_language_input_methods(&lang).unwrap());
-    }
-    InputList::try_from(imes).unwrap()
-}
-
-fn log_important_regkeys() {
-    log::trace!("  == REGKEY WATCH ==");
-    log::trace!("");
-
-    let substitutes_key = Hive::CurrentUser
-        .open(r"Keyboard Layout\Substitutes", Security::Read)
-        .unwrap();
-
-    let user_profile_key = Hive::CurrentUser
-        .create(r"Control Panel\International\User Profile", Security::Read)
-        .unwrap();
-
-    let preload_key = Hive::CurrentUser
-        .open(r"Keyboard Layout\Preload", Security::Read)
-        .unwrap();
-
-    let user_profile_subkeys = user_profile_key
-        .keys()
-        .filter_map(Result::ok)
-        .map(|x| x.open(Security::Read))
-        .filter_map(Result::ok);
-
-    for key in user_profile_subkeys {
-        log::trace!("{}", key);
-        for value in key.values().filter_map(Result::ok) {
-            let (inner_name, inner_data) = value.into_inner();
-
-            let name = inner_name.to_string_lossy().to_string();
-            let data = format!("{}", inner_data);
-            log::trace!("  '{}' = '{}'", name, data);
-        }
-        log::trace!("");
-    }
-
-    log::trace!("{}", user_profile_key);
-    for value in user_profile_key.values().filter_map(Result::ok) {
-        let (inner_name, inner_data) = value.into_inner();
-
-        let name = inner_name.to_string_lossy().to_string();
-        let data = format!("{}", inner_data);
-        log::trace!("  '{}' = '{}'", name, data);
-    }
-    log::trace!("");
-
-    log::trace!("{}", preload_key);
-    for value in preload_key.values().filter_map(Result::ok) {
-        let (inner_name, inner_data) = value.into_inner();
-
-        let name = inner_name.to_string_lossy().to_string();
-        let data = format!("{}", inner_data);
-        log::trace!("  '{}' = '{}'", name, data);
-    }
-    log::trace!("");
-
-    log::trace!("{}", substitutes_key);
-    for value in substitutes_key.values().filter_map(Result::ok) {
-        let (inner_name, inner_data) = value.into_inner();
-
-        let name = inner_name.to_string_lossy().to_string();
-        let data = format!("{}", inner_data);
-        log::trace!("  '{}' = '{}'", name, data);
-    }
-    log::trace!("");
-
-    log::trace!("  == If you see a suspicious REGKEY in your neighbourhood, call 112 ==")
-}
-
-pub fn enable(tag: &str, product_code: &str, lang_name: Option<&str>) -> Result<(), Error> {
-    log::info!("Enabling '{}' with product code '{}'", tag, product_code);
-    log::info!("Lang name: {:?}", lang_name);
-
-    log_important_regkeys();
-
-    log::info!("Regenerating registry for keyboards, just in case.");
-    regenerate_registry();
-
+pub fn enable(tag: &str, product_code: &str, _lang_name: Option<&str>) -> Result<(), Error> {
+    crate::win8::validate_language_tag(tag)?;
+    let record = KeyboardRegKey::find_by_product_code(product_code).ok_or(Error::NotFound)?;
+    let original_languages = crate::enabled_languages()?;
+    let already_enabled = original_languages
+        .iter()
+        .any(|value| value.eq_ignore_ascii_case(tag));
     let original_layout = winuser::current_keyboard();
-    let record = match KeyboardRegKey::find_by_product_code(product_code) {
-        Some(v) => v,
-        None => return Err(Error::NotFound),
-    };
 
-    // Check language is enabled or LCID check will fail
-    log::info!("Enabling language by tag");
-    crate::enable_language(tag).unwrap();
-
-    // Get all languages and keyboards
-    let mut keyboards = crate::win8::enabled_keyboards()
-        .unwrap()
-        .into_iter()
-        .collect::<IndexMap<_, _>>();
-    log::trace!("Keyboards: {:?}", &keyboards);
-
-    log::trace!("bcp47langs::lcid_from_bcp47(tag).unwrap()");
-    let lcid = bcp47langs::lcid_from_bcp47(tag).unwrap();
-    let tip = format!("{:04X}:{}", lcid, record.regkey_id());
-
-    log::debug!("Injecting into keyboard list: {}", &tip);
-
-    keyboards
-        .entry(tag.to_string())
-        .and_modify(|x| x.push(tip.clone()))
-        .or_insert(vec![tip.clone()]);
-
-    log::debug!("Keyboard list: {:?}", &keyboards);
-    log_important_regkeys();
-
-    // Remove all inputs internal
-    // log::trace!("bcp47langs::remove_inputs_for_all_languages().unwrap();");
-    // bcp47langs::remove_inputs_for_all_languages().unwrap();
-    // log_important_regkeys();
-
-    // Build input method list
-    let mut first = true;
-    for (lang_tag, tips) in keyboards {
-        let _lcid = match bcp47langs::lcid_from_bcp47(&lang_tag) {
-            Some(v) => v,
-            None => {
-                log::error!("No LCID for {}; continuing!", &lang_tag);
-                continue;
-            }
-        };
-
-        log::debug!("Tip for {}: {:?}", lang_tag, &tips);
-        let inputs = InputList::try_from(tips).unwrap();
-        log::debug!("Input list for {}: {:?}", lang_tag, &inputs);
-
-        // Flag 256 seems to clear everything.
-        // let flag = if first { 256 } else { 0 };
-        let flag = 0;
-        first = false;
-
-        input::install_layout(inputs, flag).unwrap();
+    let result = (|| -> io::Result<()> {
+        crate::enable_language(tag)?;
+        // Custom language IDs are allocated when the profile is enabled.
+        let lcid = bcp47langs::lcid_from_bcp47(tag).ok_or_else(|| {
+            io::Error::other(format!("Windows did not allocate a language ID for {tag}"))
+        })?;
+        let tip = InputList::try_from(format!("{lcid:04X}:{}", record.regkey_id()))
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid keyboard input ID"))?;
+        // Add only the requested keyboard. Do not rewrite unrelated languages,
+        // IMEs, preload order, or substitutions.
+        input::install_layout(tip, 0)
+    })();
+    if let Err(error) = result {
+        if !already_enabled {
+            winlangdb::set_user_languages(&original_languages).map_err(|rollback| {
+                io::Error::other(format!(
+                    "{error}; restoring language profiles failed: {rollback}"
+                ))
+            })?;
+        }
+        winuser::set_active_keyboard(original_layout);
+        return Err(error.into());
     }
-    log_important_regkeys();
-
-    log::info!("Regenerating registry for keyboards");
-    regenerate_registry();
-    log_important_regkeys();
-
-    log::info!("Resetting current active keyboard");
     winuser::set_active_keyboard(original_layout);
-
     coreglobconfig::sync_language_data();
-    std::thread::sleep_ms(10000);
-    log::info!("Done saving lang to cloud");
-    
     Ok(())
 }
 
-pub fn remove_invalid_kbids() {
-    let installed_imes: Vec<String> = KeyboardRegKey::installed()
-        .iter()
-        .map(|x| x.regkey_id().to_owned())
-        .collect();
-
-    let enabled_imes = enabled_input_methods();
-    let filtered_imes: Vec<InputListItem> = enabled_imes
-        .into_inner()
+fn selected_keyboard_inputs(
+    enabled: impl IntoIterator<Item = String>,
+    select: impl Fn(&InputListItem) -> bool,
+) -> InputList {
+    enabled
         .into_iter()
-        .filter(|i| {
-            let kbid = i.kbid().to_string().to_lowercase();
-            // Only handle custom keyboards
-            if kbid.starts_with("a") {
-                return true;
-            }
-            installed_imes.contains(&kbid)
-        })
-        .collect();
+        // TSF text service IDs and malformed records are not keyboard IDs.
+        // Leave them untouched instead of clearing and rebuilding the full list.
+        .filter_map(|value| InputListItem::try_from(value.as_str()).ok())
+        .filter(select)
+        .collect::<Vec<_>>()
+        .into()
+}
 
-    bcp47langs::remove_inputs_for_all_languages().unwrap();
-    input::install_layout(InputList::from(filtered_imes), 0).unwrap();
+fn stale_keyboard_inputs(enabled: Vec<String>, installed: &[String]) -> InputList {
+    selected_keyboard_inputs(enabled, |item| {
+        let id = item.kbid();
+        id.starts_with('A')
+            && !installed
+                .iter()
+                .any(|value| value.eq_ignore_ascii_case(&id))
+    })
+}
+
+fn remove_selected_inputs(
+    inputs: InputList,
+    mut remove: impl FnMut(InputList, i32) -> io::Result<()>,
+) -> io::Result<()> {
+    if !inputs.inner().is_empty() {
+        remove(inputs, input::ILOT_UNINSTALL)?;
+    }
+    Ok(())
+}
+
+fn user_input_methods() -> io::Result<Vec<String>> {
+    Ok(crate::enabled_keyboards()?
+        .into_iter()
+        .flat_map(|(_, methods)| methods)
+        .collect())
+}
+
+pub fn disable_keyboard(kbid: &str) -> io::Result<()> {
+    let selected = selected_keyboard_inputs(user_input_methods()?, |item| {
+        item.kbid().eq_ignore_ascii_case(kbid)
+    });
+    remove_selected_inputs(selected, input::install_layout)
+}
+
+pub fn remove_invalid_kbids() -> io::Result<()> {
+    let installed: Vec<String> = KeyboardRegKey::installed()
+        .iter()
+        .map(|key| key.regkey_id().to_owned())
+        .collect();
+    let stale = stale_keyboard_inputs(user_input_methods()?, &installed);
+    remove_selected_inputs(stale, input::install_layout)
 }
 
 pub fn regenerate_registry() {
-    let user_profile_key = Hive::CurrentUser
-        .open(r"Control Panel\International\User Profile", Security::Read)
+    let user_profile_key = CURRENT_USER
+        .open(r"Control Panel\International\User Profile")
         .unwrap();
-    let substitutes_key = Hive::CurrentUser
-        .open(
-            r"Keyboard Layout\Substitutes",
-            Security::Read | Security::Write,
-        )
+    let substitutes_key = CURRENT_USER
+        .options()
+        .read()
+        .write()
+        .open(r"Keyboard Layout\Substitutes")
         .unwrap();
-    let preload_key = Hive::CurrentUser
-        .open(r"Keyboard Layout\Preload", Security::Read | Security::Write)
+    let preload_key = CURRENT_USER
+        .options()
+        .read()
+        .write()
+        .open(r"Keyboard Layout\Preload")
         .unwrap();
 
     regenerate_given_registry(user_profile_key, substitutes_key, preload_key);
-}
-
-fn enable_default_user_lang(tag: &str) {
-    let default_user_registry = registry::Hive::load_file(
-        r"C:\Users\Default\NTUSER.DAT",
-        Security::Read | Security::Write,
-    )
-    .unwrap();
-    let language_key = LanguageRegKey::find_by_tag(tag).unwrap().regkey;
-    let substitutes_key = Hive::CurrentUser
-        .open(
-            r"Keyboard Layout\Substitutes",
-            Security::Read | Security::Write,
-        )
-        .unwrap();
-
-    let default_user_profile_key = default_user_registry
-        .create(
-            format!(r"Control Panel\International\User Profile\{}", tag),
-            Security::Read | Security::Write,
-        )
-        .unwrap();
-    let default_substitutes_key = default_user_registry
-        .open(
-            r"Keyboard Layout\Substitutes",
-            Security::Read | Security::Write,
-        )
-        .unwrap();
-
-    for value in language_key.values() {
-        let value = value.unwrap();
-        default_user_profile_key
-            .set_value(value.name(), value.data())
-            .unwrap();
-    }
-
-    for value in substitutes_key.values() {
-        let value = value.unwrap();
-        default_substitutes_key
-            .set_value(value.name(), value.data())
-            .unwrap();
-    }
-
-    let preload_key = default_user_registry
-        .open(r"Keyboard Layout\Preload", Security::Read | Security::Write)
-        .unwrap();
-    regenerate_given_registry(default_user_profile_key, substitutes_key, preload_key);
 }
 
 fn regenerate_given_registry(
@@ -260,19 +125,16 @@ fn regenerate_given_registry(
     substitutes_key: RegKey,
     preload_key: RegKey,
 ) {
-    let current_sid = current_process_sid().expect("Failed to get current SID");
-    let nt_auth_system = Sid::well_known_sid(WinLocalSystemSid).unwrap();
-    log::debug!("Running as {:?}", current_sid);
-    log::debug!("nta is {:?}", nt_auth_system);
-    if current_sid == nt_auth_system {
+    if native::is_local_system().expect("read process identity") {
         log::debug!("Not refreshing because we're running at NT Authority/System");
-        return
+        return;
     }
 
     log::debug!("regenerate_given_registry");
-    let lang_keys: Vec<_> = user_profile_key
-        .keys()
-        .map(|k| k.unwrap().open(Security::Read).unwrap())
+    let lang_keys: Vec<_> = registry_snapshot::keys(&user_profile_key)
+        .unwrap()
+        .into_iter()
+        .map(|name| user_profile_key.open(name).unwrap())
         .collect();
 
     log::trace!("Lang keys: {:?}", lang_keys);
@@ -280,8 +142,8 @@ fn regenerate_given_registry(
     // Get known keyboard ids from Control Panel configured language list
     let mut keyboard_ids: Vec<_> = lang_keys
         .iter()
-        .flat_map(|k| k.values())
-        .map(|v| v.unwrap().name().to_string_lossy())
+        .flat_map(|k| registry_snapshot::values(k).unwrap())
+        .map(|(name, _)| name)
         .filter(|n| n.contains(":"))
         .map(|v| InputListItem::try_from(&*v))
         // .map(|n| n.split(":").last().unwrap().to_string())
@@ -294,13 +156,10 @@ fn regenerate_given_registry(
     log::trace!("Keyboard IDs: {:?}", &keyboard_ids);
 
     // Get all substitutes into a list
-    let subs = substitutes_key
-        .values()
-        .filter_map(Result::ok)
-        .map(|x| {
-            let x = x.into_inner();
-            (x.0.to_string_lossy(), x.1.to_string())
-        })
+    let subs = registry_snapshot::values(&substitutes_key)
+        .unwrap()
+        .into_iter()
+        .map(|(name, value)| (name, String::try_from(value).expect("string substitute")))
         .collect::<Vec<_>>();
 
     log::trace!("Substitutions: {:?}", &subs);
@@ -313,14 +172,13 @@ fn regenerate_given_registry(
             .is_none()
         {
             log::debug!("Deleting substitute: {:?}", value_id);
-            substitutes_key.delete_value(value_id).unwrap();
+            substitutes_key.remove_value(value_id).unwrap();
         }
     }
 
     // Delete all preload values
-    for value in preload_key.values() {
-        let name = value.unwrap().name().to_owned();
-        preload_key.delete_value(name).unwrap();
+    for (name, _) in registry_snapshot::values(&preload_key).unwrap() {
+        preload_key.remove_value(name).unwrap();
     }
 
     log::trace!("Cleared all preload keys");
@@ -330,16 +188,77 @@ fn regenerate_given_registry(
         let lcid = format!("{:08x}", item.lang_id);
         let tip = format!("{:08x}", item.tip_id);
 
-        let value = if let Some(sub) = subs.iter().filter(|sub| sub.1 == tip && sub.0[4..] == lcid[4..]).nth(0) {
+        let value = if let Some(sub) = subs
+            .iter()
+            .filter(|sub| sub.1 == tip && sub.0[4..] == lcid[4..])
+            .nth(0)
+        {
             log::trace!("{}: Adding substitute lcid: {}", i + 1, &sub.0);
-            sub.0.clone().try_into().unwrap()
+            sub.0.clone()
         } else {
             log::trace!("{}: Adding TIP: {}", i + 1, &tip);
-            tip.try_into().unwrap()
+            tip
         };
 
-        preload_key
-            .set_value((i + 1).to_string(), &Data::String(value))
-            .unwrap();
+        preload_key.set_string((i + 1).to_string(), &value).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cleanup_removes_only_missing_custom_keyboards() {
+        let enabled = [
+            "0409:00000409",
+            "0419:00000419",
+            "2400:A0002400",
+            "2400:A0012400",
+            "0411:{tip-guid}{profile-guid}",
+            "malformed",
+        ];
+        let installed = vec!["a0002400".to_owned()];
+        let stale = stale_keyboard_inputs(
+            enabled.iter().map(|value| value.to_string()).collect(),
+            &installed,
+        );
+        let mut called = false;
+        remove_selected_inputs(stale, |inputs, flags| {
+            called = true;
+            assert_eq!(flags, 1);
+            assert_eq!(String::from(inputs), "0x2400:A0012400");
+            Ok(())
+        })
+        .unwrap();
+        assert!(called);
+    }
+
+    #[test]
+    fn cleanup_noop_does_not_touch_input_state_and_failure_is_propagated() {
+        let valid = vec!["0409:00000409".to_owned(), "2400:A0002400".to_owned()];
+        let selected = stale_keyboard_inputs(valid, &["a0002400".to_owned()]);
+        remove_selected_inputs(selected, |_, _| panic!("no input changes expected")).unwrap();
+        let stale = stale_keyboard_inputs(vec!["2400:A0012400".to_owned()], &[]);
+        let error =
+            remove_selected_inputs(stale, |_, _| Err(io::ErrorKind::PermissionDenied.into()))
+                .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn uninstall_selection_preserves_other_keyboards_and_text_services() {
+        let inputs = [
+            "0409:A0002400",
+            "2400:A0002400",
+            "2400:A0012400",
+            "0409:00000409",
+            "0411:{tip}{profile}",
+        ];
+        let selected =
+            selected_keyboard_inputs(inputs.iter().map(|value| value.to_string()), |item| {
+                item.kbid().eq_ignore_ascii_case("a0002400")
+            });
+        assert_eq!(String::from(selected), "0x0409:A0002400;0x2400:A0002400");
     }
 }
