@@ -14,7 +14,7 @@ use windows_sys::Win32::{
     },
 };
 
-struct OwnedHandle(HANDLE);
+pub(crate) struct OwnedHandle(pub(crate) HANDLE);
 impl Drop for OwnedHandle {
     fn drop(&mut self) {
         // SAFETY: this wrapper exclusively owns a successfully opened handle.

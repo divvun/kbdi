@@ -1,7 +1,11 @@
 #[cfg(not(feature = "legacy"))]
 pub mod bcp47langs;
+#[cfg(not(feature = "legacy"))]
+pub(crate) mod core_profiles;
 pub(crate) mod native;
 pub mod sys;
+#[cfg(not(feature = "legacy"))]
+pub(crate) mod text_session;
 #[cfg(not(feature = "legacy"))]
 pub mod winlangdb;
 pub mod winnls;

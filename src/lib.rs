@@ -11,6 +11,8 @@ mod keyboard_win8;
 mod language;
 pub mod platform;
 mod registry_snapshot;
+#[cfg(not(feature = "legacy"))]
+pub mod text_services;
 mod types;
 mod winrust;
 

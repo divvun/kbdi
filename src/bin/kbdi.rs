@@ -27,6 +27,9 @@ enum Opt {
         /// Enable keyboard immediately after installing
         #[arg(short, long)]
         enable: bool,
+        /// Batch installation: verify once with keyboard_refresh after all layouts
+        #[arg(long, requires = "enable")]
+        defer_refresh: bool,
     },
     #[command(
         name = "keyboard_uninstall",
@@ -50,7 +53,23 @@ enum Opt {
         /// Enable keyboard for the default user (requires admin)
         #[arg(short, long)]
         default_user: bool,
+        /// Batch activation: verify once with keyboard_refresh after all layouts
+        #[arg(long)]
+        defer_refresh: bool,
     },
+    #[cfg(not(feature = "legacy"))]
+    #[command(
+        name = "keyboard_refresh",
+        about = "Verify live keyboard profiles and refresh stale text services in this session"
+    )]
+    KeyboardRefresh {
+        /// Check only; do not restart text services
+        #[arg(long)]
+        check: bool,
+    },
+    #[cfg(not(feature = "legacy"))]
+    #[command(name = "__keyboard_profiles", hide = true)]
+    KeyboardProfiles,
     #[command(name = "registry_regen", about = "Enable a language with provided tag")]
     RegistryRegen,
     #[command(
@@ -87,6 +106,14 @@ enum Opt {
 
 fn main() {
     let opt = Opt::parse();
+    #[cfg(not(feature = "legacy"))]
+    if matches!(opt, Opt::KeyboardProfiles) {
+        if let Err(error) = text_services::probe() {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     kbdi::setup_logger().unwrap_or_else(|_| eprintln!("Logger failed to init."));
     if let Err(error) = run(opt) {
         eprintln!("kbdi: {error}");
@@ -103,6 +130,7 @@ fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
             dll,
             lang,
             enable,
+            defer_refresh,
         } => {
             match keyboard::install(&tag, &layout, &guid, &dll, lang.as_deref()) {
                 Ok(()) | Err(keyboard::Error::AlreadyExists) => (),
@@ -110,6 +138,7 @@ fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
             }
             if enable {
                 keyboard::enable(&tag, &guid, lang.as_deref())?;
+                finish_enable(defer_refresh)?;
             }
         }
         Opt::KeyboardUninstall { guid } => keyboard::uninstall(&guid)?,
@@ -118,13 +147,19 @@ fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
             guid,
             lang,
             default_user,
+            defer_refresh,
         } => {
             if default_user {
                 eprintln!("--default-user is not implemented; no keyboard changes were made");
                 std::process::exit(2);
             }
             keyboard::enable(&tag, &guid, lang.as_deref())?;
+            finish_enable(defer_refresh)?;
         }
+        #[cfg(not(feature = "legacy"))]
+        Opt::KeyboardRefresh { check } => text_services::refresh(check)?,
+        #[cfg(not(feature = "legacy"))]
+        Opt::KeyboardProfiles => unreachable!("probe handled before logger initialization"),
         Opt::RegistryRegen => keyboard::regenerate_registry(),
         Opt::LanguageEnable { tag } => enable_language(&tag)?,
         Opt::LanguageQuery { tag } => println!("{}", query_language(&tag)),
@@ -141,6 +176,22 @@ fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
         }
         Opt::Clean => clean().map_err(std::io::Error::other)?,
     }
+    Ok(())
+}
+
+fn finish_enable(defer_refresh: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if defer_refresh {
+        log::info!(
+            "Keyboard preference saved; live verification deferred. Run keyboard_refresh after all layouts are registered and enabled."
+        );
+        return Ok(());
+    }
+    #[cfg(not(feature = "legacy"))]
+    text_services::refresh(false).map_err(|error| {
+        std::io::Error::other(format!(
+            "keyboard preference saved, but live activation was not verified: {error}"
+        ))
+    })?;
     Ok(())
 }
 
@@ -184,10 +235,12 @@ mod tests {
             dll,
             lang,
             enable,
+            defer_refresh,
         } = parsed
         else {
             panic!("wrong command");
         };
+        assert!(!defer_refresh);
         assert_eq!(
             (
                 tag.as_str(),
@@ -238,6 +291,30 @@ mod tests {
         for command in ["language_enable", "language_query"] {
             Opt::try_parse_from(["kbdi", command, "se"]).unwrap();
         }
+    }
+
+    #[test]
+    fn batch_requires_enable_and_exposes_final_verification() {
+        let args = [
+            "kbdi",
+            "keyboard_install",
+            "-t",
+            "sjd-Cyrl",
+            "-g",
+            "{guid}",
+            "-n",
+            "Test",
+            "-d",
+            "kbdtest.dll",
+            "--defer-refresh",
+        ];
+        assert!(Opt::try_parse_from(args).is_err());
+        assert!(Opt::try_parse_from(args.into_iter().chain(["-e"])).is_ok());
+        #[cfg(not(feature = "legacy"))]
+        assert!(matches!(
+            Opt::try_parse_from(["kbdi", "keyboard_refresh", "--check"]).unwrap(),
+            Opt::KeyboardRefresh { check: true }
+        ));
     }
 
     #[test]

@@ -45,7 +45,7 @@ system-library search rules, and report missing capabilities. Native tests use
 read-only queries only; they do not establish keyboard installation compatibility
 on old Windows releases. Microsoft windows-registry 0.100.0 replaces the old
 registry/utfx wrapper; owned SDK snapshots propagate enumeration errors.
-Thirteen modern tests and six legacy-configuration tests pass on each of x86 and x64.
+Nineteen modern tests and six legacy-configuration tests pass on each of x86 and x64.
 Both complete lockfiles pass cargo-audit 0.22.2 with warnings denied.
 
 Logging is local; compile-time `SENTRY_DSN` no longer enables telemetry.
@@ -73,6 +73,60 @@ Boolean API results, parsing, and read-only locale validation. Full installed
 keyboard typing, upgrade/uninstall acceptance and default-profile provisioning
 remain separate validation work. `registry_regen` remains an explicit repair
 command; ordinary activation and uninstall no longer invoke it.
+
+## Live keyboard activation
+
+`keyboard_enable` and `keyboard_install -e` now verify that Windows saved the
+requested input method and that the live profiles used by Explorer contain its
+correct language/layout ID. On Windows 11, ctfmon can retain a special-layout
+cache from before installation and publish `LANG:00000000`; selecting that input
+can make Explorer's switcher fail fast. Registry/DLL checks alone miss this.
+
+The CLI retries profile delivery, then restarts ctfmon at most once if the live
+snapshot is stale. It verifies the corrected profiles before returning success.
+A healthy session does not restart. Recovery checks the caller's user, session,
+desktop, shell, and the opened ctfmon process's path/token. It never restarts
+Explorer or system services. Windows normally respawns ctfmon; a bounded fallback
+launch uses the same user's normal desktop and a non-elevated token. Saved input
+preferences remain intact, and the foreground keyboard selection is restored.
+
+```
+kbdi keyboard_refresh --check  # verify only; nonzero if stale/unavailable
+kbdi keyboard_refresh          # verify and recover if needed
+```
+
+For bundles, register every layout first with `keyboard_install` (without `-e`),
+then enable them. The first needed recovery rebuilds the cache for all registered
+layouts, so later enables can verify without another restart. The outto CI
+builder uses this order with the existing install/enable command interface.
+Alternatively, `keyboard_install -e --defer-refresh` or
+`keyboard_enable --defer-refresh` saves each preference and explicitly defers
+verification; finish the entire batch with one `keyboard_refresh`. Deferred
+success means the preference was saved, not that live activation was verified.
+
+Run activation/recovery as the intended logged-in user on the normal desktop.
+SYSTEM, session zero, alternate desktops, or a different user's shell cannot
+refresh another user's session. A nonzero exit explains when interactive recovery
+or signing out and back in is required. Installers must handle that result;
+outto's current generic run-hook handler only logs nonzero exits as warnings.
+
+The live check uses the private WinRT CoreKeyboardInputProfileManager contract,
+isolated in `platform/core_profiles.rs`. A fresh, read-only child process pumps
+the asynchronous initial snapshot and is limited to eight seconds. Missing APIs,
+invalid data, crashes, and timeouts fail explicitly and do not trigger a restart.
+No debugger attachment, memory offsets, DLL injection, or registry reconstruction
+is involved. The library's `keyboard::enable` saves/verifies preferences; the CLI
+adds live verification (`text_services::refresh` requires the kbdi executable).
+
+Validation on Windows 11 (Core TextInput/InputService 10.0.26100.9278): two new
+temporary registrations produced two zero layout IDs; one x64 elevated recovery
+corrected both and a repeat was a no-op. A fresh x86 non-elevated `keyboard_enable`
+also recovered automatically. Test registrations were removed; the language/input
+list, default input override and Explorer process were preserved. Release unit
+tests cover healthy/delayed/stale batches, check-only operation, unavailable
+probes, and failed recovery. x86 and x64 execute locally; ARM64 is cross-compiled
+with test executables and still requires native runtime validation. Older Windows
+versions and the explicit launch fallback require additional runtime coverage.
 
 ## License
 

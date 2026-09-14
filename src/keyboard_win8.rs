@@ -13,7 +13,7 @@ pub fn enable(tag: &str, product_code: &str, _lang_name: Option<&str>) -> Result
     let already_enabled = original_languages
         .iter()
         .any(|value| value.eq_ignore_ascii_case(tag));
-    let original_layout = winuser::current_keyboard();
+    let _original_layout = text_session::ActiveKeyboard::capture();
 
     let result = (|| -> io::Result<()> {
         crate::enable_language(tag)?;
@@ -21,11 +21,22 @@ pub fn enable(tag: &str, product_code: &str, _lang_name: Option<&str>) -> Result
         let lcid = bcp47langs::lcid_from_bcp47(tag).ok_or_else(|| {
             io::Error::other(format!("Windows did not allocate a language ID for {tag}"))
         })?;
-        let tip = InputList::try_from(format!("{lcid:04X}:{}", record.regkey_id()))
+        let expected = format!("{lcid:04X}:{}", record.regkey_id());
+        let tip = InputList::try_from(expected.clone())
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid keyboard input ID"))?;
         // Add only the requested keyboard. Do not rewrite unrelated languages,
         // IMEs, preload order, or substitutions.
-        input::install_layout(tip, 0)
+        input::install_layout(tip, 0)?;
+        if !crate::enabled_keyboards()?
+            .iter()
+            .flat_map(|(_, ids)| ids)
+            .any(|id| id.eq_ignore_ascii_case(&expected))
+        {
+            return Err(io::Error::other(format!(
+                "Windows did not save keyboard input {expected}"
+            )));
+        }
+        Ok(())
     })();
     if let Err(error) = result {
         if !already_enabled {
@@ -35,10 +46,8 @@ pub fn enable(tag: &str, product_code: &str, _lang_name: Option<&str>) -> Result
                 ))
             })?;
         }
-        winuser::set_active_keyboard(original_layout);
         return Err(error.into());
     }
-    winuser::set_active_keyboard(original_layout);
     coreglobconfig::sync_language_data();
     Ok(())
 }
