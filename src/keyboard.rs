@@ -115,7 +115,7 @@ pub fn uninstall(product_code: &str) -> Result<(), Error> {
 /// from every language TSF registered it under, before its KLID goes. A
 /// profile still named by another KLID, such as one an older installer
 /// registered under the product code without its closing brace, is kept.
-// [spec:kbdgen:req:tsf.register.uninstall]
+// [spec:kbdgen:req:tsf.register.uninstall+1]
 #[cfg(not(feature = "legacy"))]
 fn remove_profile(record: &KeyboardRegKey) -> Result<(), Error> {
     use crate::tsf::parse_guid;
@@ -123,6 +123,7 @@ fn remove_profile(record: &KeyboardRegKey) -> Result<(), Error> {
         return Ok(());
     };
     crate::keyboard_win8::disable_profile(profile)?;
+    crate::keyboard_win8::forget_profile(profile)?;
     let shared = KeyboardRegKey::installed().iter().any(|other| {
         !other.regkey_id().eq_ignore_ascii_case(record.regkey_id())
             && other.product_code().and_then(|code| parse_guid(&code)) == Some(profile)

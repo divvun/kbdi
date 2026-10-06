@@ -239,7 +239,7 @@ fn remove_profile_inputs(
 }
 
 /// Removes the profile from the current user's inputs, in every language.
-// [spec:kbdgen:req:tsf.register.uninstall]
+// [spec:kbdgen:req:tsf.register.uninstall+1]
 pub fn disable_profile(profile: u128) -> io::Result<()> {
     let selected = selected_profile_inputs(user_input_methods()?, |tip| tip.profile == profile);
     remove_profile_inputs(selected, input::install)?;
@@ -249,6 +249,93 @@ pub fn disable_profile(profile: u128) -> io::Result<()> {
     let kept = selected_profile_inputs(user_input_methods()?, |tip| tip.profile == profile);
     if !kept.is_empty() {
         log::warn!("Windows kept text service inputs {kept:?}");
+    }
+    Ok(())
+}
+
+/// TSF's keyboard category, under which `CTF\SortOrder` orders inputs.
+const KEYBOARD_CATEGORY: &str = "{34745C63-B2F0-4784-8B67-5E12C8701A31}";
+
+fn user_key(path: &str) -> Option<RegKey> {
+    CURRENT_USER.options().read().write().open(path).ok()
+}
+
+/// Deletes `parent\name` when it has neither subkeys nor values.
+fn remove_if_empty(parent: &str, name: &str) -> io::Result<()> {
+    let Some(key) = user_key(&format!(r"{parent}\{name}")) else {
+        return Ok(());
+    };
+    let empty =
+        registry_snapshot::keys(&key)?.is_empty() && registry_snapshot::values(&key)?.is_empty();
+    match user_key(parent) {
+        Some(parent) if empty => Ok(parent.remove_tree(name)?),
+        _ => Ok(()),
+    }
+}
+
+/// Whether a `CTF\SortOrder` entry names `profile` of the text service.
+fn names_profile(entry: &RegKey, profile: u128) -> bool {
+    let guid = |name| {
+        entry
+            .get_string(name)
+            .ok()
+            .and_then(|text| tsf::parse_guid(&text))
+    };
+    guid("CLSID") == Some(tsf::CLSID) && guid("Profile") == Some(profile)
+}
+
+/// Removes what Windows keeps of `profile` for the current user once its
+/// inputs are gone, so that uninstalling restores the user's registry:
+/// the enable state under `Software\Microsoft\CTF\TIP\{CLSID}`, which
+/// `ILOT_UNINSTALL` leaves at 0, and a language's input order under
+/// `CTF\SortOrder\AssemblyItem`, which activating the profile writes, when
+/// it names only the profile. An order naming other inputs too is kept,
+/// since Windows numbers its entries.
+// [spec:kbdgen:req:tsf.register.uninstall+1]
+pub fn forget_profile(profile: u128) -> io::Result<()> {
+    let tips = r"Software\Microsoft\CTF\TIP";
+    let clsid = tsf::braced(tsf::CLSID);
+    let languages = format!(r"{tips}\{clsid}\LanguageProfile");
+    if let Some(key) = user_key(&languages) {
+        for language in registry_snapshot::keys(&key)? {
+            let Some(profiles) = user_key(&format!(r"{languages}\{language}")) else {
+                continue;
+            };
+            for name in registry_snapshot::keys(&profiles)? {
+                if tsf::parse_guid(&name) == Some(profile) {
+                    log::info!("Removing the user's state of profile {name} under {language}");
+                    profiles.remove_tree(&name)?;
+                }
+            }
+            remove_if_empty(&languages, &language)?;
+        }
+        remove_if_empty(&format!(r"{tips}\{clsid}"), "LanguageProfile")?;
+        remove_if_empty(tips, &clsid)?;
+    }
+    let items = r"Software\Microsoft\CTF\SortOrder\AssemblyItem";
+    let Some(key) = user_key(items) else {
+        return Ok(());
+    };
+    for language in registry_snapshot::keys(&key)? {
+        let order = format!(r"{items}\{language}");
+        let Some(category) = user_key(&format!(r"{order}\{KEYBOARD_CATEGORY}")) else {
+            continue;
+        };
+        let entries = registry_snapshot::keys(&category)?;
+        let only_profile = !entries.is_empty()
+            && entries.iter().all(|name| {
+                user_key(&format!(r"{order}\{KEYBOARD_CATEGORY}\{name}"))
+                    .is_some_and(|entry| names_profile(&entry, profile))
+            });
+        if only_profile {
+            log::info!(
+                "Removing the user's input order of {language}, which names only the profile"
+            );
+            if let Some(order_key) = user_key(&order) {
+                order_key.remove_tree(KEYBOARD_CATEGORY)?;
+            }
+            remove_if_empty(items, &language)?;
+        }
     }
     Ok(())
 }

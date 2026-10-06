@@ -247,7 +247,7 @@ pub fn ensure_profile(
 }
 
 /// Unregisters `profile` under every LANGID TSF holds it under.
-// [spec:kbdgen:req:tsf.register.uninstall]
+// [spec:kbdgen:req:tsf.register.uninstall+1]
 pub fn unregister_profile(profile: u128) -> io::Result<()> {
     let lang_ids = registered_lang_ids(profile)?;
     if lang_ids.is_empty() {
