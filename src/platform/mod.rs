@@ -19,6 +19,8 @@ pub mod input {
     use std::io;
 
     pub const ILOT_UNINSTALL: i32 = 0x00000001;
+    /// Applies to `.DEFAULT`, the profile of the welcome screen.
+    pub const ILOT_DEFUSER4: i32 = 0x00000004;
 
     pub fn install_layout(inputs: InputList, flag: i32) -> Result<(), io::Error> {
         log::trace!("Input list: {:?}", &inputs);

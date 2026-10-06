@@ -101,6 +101,8 @@ pub fn uninstall(product_code: &str) -> Result<(), Error> {
         remove_profile(&record)?;
         #[cfg(not(feature = "legacy"))]
         crate::keyboard_win8::disable_keyboard(record.regkey_id())?;
+        #[cfg(not(feature = "legacy"))]
+        crate::keyboard_win8::disable_default_user(record.regkey_id())?;
         layouts.remove_tree(record.regkey_id())?;
         return Ok(());
     }

@@ -50,7 +50,8 @@ enum Opt {
         /// Native language name, if required (eg: Norsk)
         #[arg(short, long)]
         lang: Option<String>,
-        /// Enable keyboard for the default user (requires admin)
+        /// Offer the keyboard's layout on the welcome screen instead of
+        /// enabling it for this user (requires admin)
         #[arg(short, long)]
         default_user: bool,
         /// Batch activation: verify once with keyboard_refresh after all layouts
@@ -150,8 +151,13 @@ fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
             defer_refresh,
         } => {
             if default_user {
-                eprintln!("--default-user is not implemented; no keyboard changes were made");
-                std::process::exit(2);
+                #[cfg(not(feature = "legacy"))]
+                return Ok(keyboard::enable_default_user(&guid)?);
+                #[cfg(feature = "legacy")]
+                {
+                    eprintln!("--default-user is not implemented; no keyboard changes were made");
+                    std::process::exit(2);
+                }
             }
             keyboard::enable(&tag, &guid, lang.as_deref())?;
             finish_enable(defer_refresh)?;
