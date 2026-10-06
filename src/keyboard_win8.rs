@@ -1,11 +1,15 @@
 use crate::keyboard::{Error, KeyboardRegKey};
 use crate::platform::*;
 use crate::registry_snapshot;
+use crate::tsf::{self, TipInput};
 use crate::types::*;
 use std::convert::TryFrom;
 use std::io;
 use windows_registry::{CURRENT_USER, Key as RegKey};
 
+/// Adds the keyboard to the user's input list: the text service's profile
+/// when the text service is installed, otherwise the layout, never both.
+// [spec:kbdgen:req:tsf.register.enable]
 pub fn enable(tag: &str, product_code: &str, _lang_name: Option<&str>) -> Result<(), Error> {
     crate::win8::validate_language_tag(tag)?;
     let record = KeyboardRegKey::find_by_product_code(product_code).ok_or(Error::NotFound)?;
@@ -21,20 +25,35 @@ pub fn enable(tag: &str, product_code: &str, _lang_name: Option<&str>) -> Result
         let lcid = bcp47langs::lcid_from_bcp47(tag).ok_or_else(|| {
             io::Error::other(format!("Windows did not allocate a language ID for {tag}"))
         })?;
-        let expected = format!("{lcid:04X}:{}", record.regkey_id());
-        let tip = InputList::try_from(expected.clone())
+        let lang_id = lcid as u16;
+        let layout = format!("{lang_id:04X}:{}", record.regkey_id().to_ascii_uppercase());
+        InputList::try_from(layout.clone())
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid keyboard input ID"))?;
+        let profile = record
+            .product_code()
+            .and_then(|code| tsf::parse_guid(&code));
+        let expected = match profile.and_then(|profile| register_profile(&record, lang_id, profile))
+        {
+            Some(tip) => tip.to_string(),
+            None => layout,
+        };
         // Add only the requested keyboard. Do not rewrite unrelated languages,
         // IMEs, preload order, or substitutions.
-        input::install_layout(tip, 0)?;
-        if !crate::enabled_keyboards()?
+        input::install(&expected, 0)?;
+        if !user_input_methods()?
             .iter()
-            .flat_map(|(_, ids)| ids)
-            .any(|id| id.eq_ignore_ascii_case(&expected))
+            .any(|id| tsf::same_input(id, &expected))
         {
             return Err(io::Error::other(format!(
                 "Windows did not save keyboard input {expected}"
             )));
+        }
+        // Then remove the other form, which an earlier install or a text
+        // service installed or removed since may have left enabled.
+        if TipInput::parse(&expected).is_some() {
+            disable_keyboard(record.regkey_id())?;
+        } else if let Some(profile) = profile {
+            disable_profile(profile)?;
         }
         Ok(())
     })();
@@ -50,6 +69,45 @@ pub fn enable(tag: &str, product_code: &str, _lang_name: Option<&str>) -> Result
     }
     coreglobconfig::sync_language_data();
     Ok(())
+}
+
+/// The keyboard's profile under `lang_id`, registered now if needed, or
+/// `None` to fall back to the layout because the text service is absent or
+/// refused the profile.
+// [spec:kbdgen:req:tsf.register.langid]
+fn register_profile(record: &KeyboardRegKey, lang_id: u16, profile: u128) -> Option<TipInput> {
+    if !tsf::available() {
+        return None;
+    }
+    let file = record.layout_file()?;
+    let name = record.layout_name().unwrap_or_default();
+    match tsf::ensure_profile(lang_id, profile, &name, &file) {
+        Ok(()) => Some(TipInput::new(lang_id, profile)),
+        Err(error) => {
+            log::warn!("Text service profile unavailable, enabling the layout: {error}");
+            None
+        }
+    }
+}
+
+/// Registers the profile of a newly installed layout whose tag has a
+/// Windows locale, under the LANGID of its KLID. Profiles of tags without
+/// one are registered by `enable`, under the user's transient LANGID.
+// [spec:kbdgen:req:tsf.register.profile]
+pub fn register_installed_profile(tag: &str, product_code: &str) {
+    let Some(record) = KeyboardRegKey::find_by_product_code(product_code) else {
+        return;
+    };
+    let lcid = match winnls::locale_name_to_lcid(tag) {
+        Ok(lcid) if lcid != 0x1000 => lcid,
+        _ => return,
+    };
+    if let Some(profile) = record
+        .product_code()
+        .and_then(|code| tsf::parse_guid(&code))
+    {
+        register_profile(&record, lcid as u16, profile);
+    }
 }
 
 fn selected_keyboard_inputs(
@@ -100,13 +158,64 @@ pub fn disable_keyboard(kbid: &str) -> io::Result<()> {
     remove_selected_inputs(selected, input::install_layout)
 }
 
+/// The user's inputs of the text service's profiles that `select` picks.
+fn selected_profile_inputs(
+    enabled: impl IntoIterator<Item = String>,
+    select: impl Fn(&TipInput) -> bool,
+) -> Vec<TipInput> {
+    enabled
+        .into_iter()
+        .filter_map(|value| TipInput::parse(&value))
+        .filter(|tip| tip.clsid == tsf::CLSID && select(tip))
+        .collect()
+}
+
+fn remove_profile_inputs(
+    inputs: Vec<TipInput>,
+    remove: impl FnOnce(&str, i32) -> io::Result<()>,
+) -> io::Result<()> {
+    if inputs.is_empty() {
+        return Ok(());
+    }
+    let list = inputs
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(";");
+    remove(&list, input::ILOT_UNINSTALL)
+}
+
+/// Removes the profile from the current user's inputs, in every language.
+// [spec:kbdgen:req:tsf.register.uninstall]
+pub fn disable_profile(profile: u128) -> io::Result<()> {
+    let selected = selected_profile_inputs(user_input_methods()?, |tip| tip.profile == profile);
+    remove_profile_inputs(selected, input::install)?;
+    // Windows ignores the removal of a profile whose text service is no
+    // longer registered. The text service's uninstaller runs only after the
+    // last profile is gone, so this is a broken install, not an error here.
+    let kept = selected_profile_inputs(user_input_methods()?, |tip| tip.profile == profile);
+    if !kept.is_empty() {
+        log::warn!("Windows kept text service inputs {kept:?}");
+    }
+    Ok(())
+}
+
 pub fn remove_invalid_kbids() -> io::Result<()> {
-    let installed: Vec<String> = KeyboardRegKey::installed()
+    let installed = KeyboardRegKey::installed();
+    let klids: Vec<String> = installed
         .iter()
         .map(|key| key.regkey_id().to_owned())
         .collect();
-    let stale = stale_keyboard_inputs(user_input_methods()?, &installed);
-    remove_selected_inputs(stale, input::install_layout)
+    let stale = stale_keyboard_inputs(user_input_methods()?, &klids);
+    remove_selected_inputs(stale, input::install_layout)?;
+    let profiles: Vec<u128> = installed
+        .iter()
+        .filter_map(|key| key.product_code().and_then(|code| tsf::parse_guid(&code)))
+        .collect();
+    let stale = selected_profile_inputs(user_input_methods()?, |tip| {
+        !profiles.contains(&tip.profile)
+    });
+    remove_profile_inputs(stale, input::install)
 }
 
 pub fn regenerate_registry() {
@@ -253,6 +362,36 @@ mod tests {
             remove_selected_inputs(stale, |_, _| Err(io::ErrorKind::PermissionDenied.into()))
                 .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn profile_selection_picks_only_this_text_service_profile() {
+        let ours = TipInput::new(0x2000, 7);
+        let other_language = TipInput::new(0x0409, 7);
+        let other_profile = TipInput::new(0x2000, 8);
+        let other_service = TipInput {
+            clsid: tsf::CLSID ^ 1,
+            ..ours
+        };
+        let inputs = [
+            ours.to_string(),
+            "2000:A0002000".to_owned(),
+            other_language.to_string().to_ascii_lowercase(),
+            other_profile.to_string(),
+            other_service.to_string(),
+        ];
+        let selected = selected_profile_inputs(inputs, |tip| tip.profile == 7);
+        assert_eq!(selected, vec![ours, other_language]);
+        let mut called = false;
+        remove_profile_inputs(selected, |list, flags| {
+            called = true;
+            assert_eq!(flags, input::ILOT_UNINSTALL);
+            assert_eq!(list, format!("{ours};{other_language}"));
+            Ok(())
+        })
+        .unwrap();
+        assert!(called);
+        remove_profile_inputs(Vec::new(), |_, _| panic!("no input changes expected")).unwrap();
     }
 
     #[test]

@@ -2,6 +2,7 @@
 use crate::{
     keyboard::KeyboardRegKey,
     platform::{core_profiles, text_session},
+    tsf::{self, TipInput},
     types::InputListItem,
 };
 use std::{
@@ -90,7 +91,7 @@ fn read_live_profiles() -> io::Result<Vec<String>> {
 fn missing(expected: &[String], actual: &[String]) -> Vec<String> {
     expected
         .iter()
-        .filter(|id| !actual.iter().any(|live| id.eq_ignore_ascii_case(live)))
+        .filter(|id| !actual.iter().any(|live| tsf::same_input(id, live)))
         .cloned()
         .collect()
 }
@@ -148,10 +149,28 @@ pub fn refresh(check_only: bool) -> io::Result<()> {
     let session = text_session::Session::current()?;
     let before = crate::enabled_keyboards()?;
     let installed = KeyboardRegKey::installed();
+    // A profile is live only while its text service is registered.
+    let profiles: Vec<u128> = if tsf::available() {
+        installed
+            .iter()
+            .filter_map(|layout| {
+                layout
+                    .product_code()
+                    .and_then(|code| tsf::parse_guid(&code))
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    // [spec:kbdgen:req:tsf.register.enable]
     let expected: Vec<String> = before
         .iter()
         .flat_map(|(_, ids)| ids)
         .filter_map(|id| {
+            if let Some(tip) = TipInput::parse(id) {
+                return (tip.clsid == tsf::CLSID && profiles.contains(&tip.profile))
+                    .then(|| id.clone());
+            }
             let input = InputListItem::try_from(id.as_str()).ok()?;
             installed
                 .iter()
@@ -269,6 +288,13 @@ mod tests {
             )
             .is_err()
         );
+    }
+    #[test]
+    fn text_service_profiles_match_in_either_form() {
+        let tip = TipInput::new(0x2000, 0x94C7_1262_EE9D_489B_926C_1593_8155_8D90).to_string();
+        let live = format!("0x{}", tip.to_ascii_lowercase());
+        assert!(missing(std::slice::from_ref(&tip), &[live]).is_empty());
+        assert_eq!(missing(std::slice::from_ref(&tip), &expected()), vec![tip]);
     }
     #[test]
     fn probe_failure_is_not_a_reason_to_restart() {

@@ -67,6 +67,8 @@ pub fn install(
 
     log::info!("Creating registry key");
     KeyboardRegKey::create(tag, &lang_name, product_code, layout_file, layout_name);
+    #[cfg(not(feature = "legacy"))]
+    crate::keyboard_win8::register_installed_profile(tag, product_code);
     Ok(())
 }
 
