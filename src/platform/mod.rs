@@ -3,6 +3,8 @@ pub mod bcp47langs;
 #[cfg(not(feature = "legacy"))]
 pub(crate) mod core_profiles;
 pub(crate) mod native;
+#[cfg(not(feature = "legacy"))]
+pub(crate) mod profile_mgr;
 pub mod sys;
 #[cfg(not(feature = "legacy"))]
 pub(crate) mod text_session;
@@ -19,11 +21,15 @@ pub mod input {
     pub const ILOT_UNINSTALL: i32 = 0x00000001;
 
     pub fn install_layout(inputs: InputList, flag: i32) -> Result<(), io::Error> {
-        log::debug!("install_layout({:?}, {:?})", inputs, flag);
         log::trace!("Input list: {:?}", &inputs);
-        let input_string = String::from(inputs);
-        log::trace!("Input string: {}", &input_string);
-        let winput = to_wide_string(&input_string);
+        install(&String::from(inputs), flag)
+    }
+
+    /// Adds or, with `ILOT_UNINSTALL`, removes `;`-separated layouts
+    /// (`LLLL:KLID`) or text service profiles (`LLLL:{CLSID}{GUID}`).
+    pub fn install(input_string: &str, flag: i32) -> Result<(), io::Error> {
+        log::debug!("install_layout({input_string:?}, {flag:?})");
+        let winput = to_wide_string(input_string);
 
         // let ret = unsafe { sys::input::InstallLayoutOrTipUserReg(null(), null(), null(), winput.as_ptr(), flag) };
         let ret = unsafe { sys::input::InstallLayoutOrTip(winput.as_ptr(), flag)? };

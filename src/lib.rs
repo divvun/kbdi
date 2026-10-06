@@ -13,6 +13,8 @@ pub mod platform;
 mod registry_snapshot;
 #[cfg(not(feature = "legacy"))]
 pub mod text_services;
+#[cfg(not(feature = "legacy"))]
+pub mod tsf;
 mod types;
 mod winrust;
 
