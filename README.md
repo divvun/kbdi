@@ -128,6 +128,47 @@ probes, and failed recovery. x86 and x64 execute locally; ARM64 is cross-compile
 with test executables and still requires native runtime validation. Older Windows
 versions and the explicit launch fallback require additional runtime coverage.
 
+## Text service profiles
+
+When the Divvun keyboard text service is installed (its CLSID
+`{5E668C8A-2FB8-41D2-90B1-9C132653FA9D}` names an existing DLL), each keyboard
+is offered to users through a TSF language profile instead of its layout DLL.
+This follows kbdgen's `docs/spec/tsf.md`, "Registration"; the code carries
+`[spec:kbdgen:...]` comments naming the rules.
+
+- The profile GUID is the `-g` product code. `keyboard_install` registers the
+  profile with `ITfInputProcessorProfileMgr::RegisterProfile` under the KLID's
+  LANGID when the tag has a Windows locale, with the layout name, the layout DLL
+  in the system directory as icon, no substitute layout, enabled by default.
+  kbdi never writes `CTF\TIP` keys itself.
+- `keyboard_enable` registers the profile under the LANGID that the user's
+  language list assigns, which for tags without a Windows locale is transient
+  and per user, and adds `LLLL:{CLSID}{GUID}` to the user's inputs. It then
+  removes the user's `LLLL:<KLID>` input, so the keyboard is listed once. Without
+  the text service, or if TSF refuses the profile, it enables the layout as
+  before and removes the profile input instead. Live verification and
+  `clean` accept profile inputs.
+- `keyboard_enable --default-user` (elevated) adds the layout, not the profile,
+  to the welcome screen (`.DEFAULT`, with `ILOT_DEFUSER4`). New users' profiles
+  are not changed.
+- `keyboard_uninstall` removes the profile from the user's inputs, unregisters
+  it under every LANGID TSF holds it under (unless another KLID still names the
+  same product code), removes the layout input and the welcome screen entry,
+  then the KLID. The text service's own uninstaller must run only after the
+  last profile under its CLSID is gone: Windows ignores the removal of a
+  profile input whose text service is no longer registered.
+
+A test build can target a test registration of the text service by setting
+`KBDI_TSF_CLSID` to its CLSID at build time.
+
+Validated on Windows 11 x64 with a test registration of the text service: x64
+and x86 kbdi install, enable and uninstall keyboards for a Windows locale
+(`se-FI`, LANGID `0C3B`) and a transient one (`myv-Cyrl`, `2000`); the profiles
+type in 64- and 32-bit processes and pass live verification; the fallback to and
+from the layout and the welcome screen entry were exercised; uninstall restored
+the language list, the inputs and `.DEFAULT` exactly. Several users with
+different transient LANGIDs, Arm64 and sign-in typing remain unverified.
+
 ## License
 
 `kbdi` is licensed under either of
