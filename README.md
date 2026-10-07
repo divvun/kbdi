@@ -4,7 +4,7 @@ A helper tool for manipulating keyboards and locales on Windows. In general, thi
 
 ## Building
 
-Rust 1.98.1 is pinned in `rust-toolchain.toml`; this crate uses edition 2024.
+This crate uses edition 2024 and needs Rust 1.98.1 or newer.
 The historical installer payload is i686. The modern helper also builds for
 x86_64 and native ARM64 (`aarch64-pc-windows-msvc`). `.cargo/config.toml` enables
 static CRT linking on all three targets. The embedded application manifest omits
