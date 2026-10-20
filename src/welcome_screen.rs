@@ -295,6 +295,7 @@ impl Layouts {
             .filter(|entry| match entry {
                 Entry::Key(_) => true,
                 Entry::Preload(name) | Entry::Value(_, name, _) => dummy(name),
+                Entry::Language(..) => false,
             })
             .filter(|entry| !entry.existed_in(before))
             .collect()
