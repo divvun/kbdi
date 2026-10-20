@@ -218,7 +218,7 @@ fn remove_profile_inputs(
 }
 
 /// Removes the profile from the current user's inputs, in every language.
-// [spec:kbdgen:req:tsf.register.uninstall+2]
+// [spec:kbdgen:req:tsf.register.uninstall+3]
 pub fn disable_profile(profile: u128) -> io::Result<()> {
     let selected = selected_profile_inputs(user_input_methods()?, |tip| tip.profile == profile);
     remove_profile_inputs(selected, input::install)?;
@@ -252,27 +252,43 @@ fn remove_if_empty(parent: &str, name: &str) -> io::Result<()> {
     }
 }
 
+fn entry_guid(entry: &RegKey, name: &str) -> Option<u128> {
+    entry
+        .get_string(name)
+        .ok()
+        .and_then(|text| tsf::parse_guid(&text))
+}
+
 /// Whether a `CTF\SortOrder` entry names `profile` of the text service.
 fn names_profile(entry: &RegKey, profile: u128) -> bool {
-    let guid = |name| {
-        entry
-            .get_string(name)
-            .ok()
-            .and_then(|text| tsf::parse_guid(&text))
-    };
-    guid("CLSID") == Some(tsf::CLSID) && guid("Profile") == Some(profile)
+    entry_guid(entry, "CLSID") == Some(tsf::CLSID) && entry_guid(entry, "Profile") == Some(profile)
+}
+
+/// The high word of the HKL Windows gives the layout whose `Layout Id` is
+/// `id`: `F000` with the ID, as in `f0cf2800` for `00cf`.
+fn layout_word(id: &str) -> Option<u16> {
+    u16::from_str_radix(id, 16)
+        .ok()
+        .filter(|&id| id <= 0x0FFF)
+        .map(|id| 0xF000 | id)
+}
+
+/// Whether a `CTF\SortOrder` entry names a layout, not a text service,
+/// whose HKL has `word` as its high word.
+fn names_layout(entry: &RegKey, word: u16) -> bool {
+    entry_guid(entry, "CLSID") == Some(0)
+        && entry
+            .get_u32("KeyboardLayout")
+            .is_ok_and(|hkl| (hkl >> 16) as u16 == word)
 }
 
 /// Removes what Windows keeps of `profile` for the current user once its
 /// inputs are gone, so that uninstalling restores the user's registry:
 /// the enable state under `Software\Microsoft\CTF\TIP\{CLSID}`, which
-/// `ILOT_UNINSTALL` leaves at 0, and a language's input order under
-/// `CTF\SortOrder\AssemblyItem`, which activating the profile writes, when
-/// it names only the profile. An order naming other inputs too is kept,
-/// since Windows numbers its entries. As in `HKLM` (`tsf::unregister_profile`),
+/// `ILOT_UNINSTALL` leaves at 0. As in `HKLM` (`tsf::unregister_profile`),
 /// the language keys the profile was removed from go once empty, then the
 /// keys above them; in `HKCU` the text service has no keys of its own.
-// [spec:kbdgen:req:tsf.register.uninstall+2]
+// [spec:kbdgen:req:tsf.register.uninstall+3]
 pub fn forget_profile(profile: u128) -> io::Result<()> {
     let tips = r"Software\Microsoft\CTF\TIP";
     let clsid = tsf::braced(tsf::CLSID);
@@ -297,6 +313,24 @@ pub fn forget_profile(profile: u128) -> io::Result<()> {
         remove_if_empty(&format!(r"{tips}\{clsid}"), "LanguageProfile")?;
         remove_if_empty(tips, &clsid)?;
     }
+    Ok(())
+}
+
+/// Removes a language's input order under `CTF\SortOrder\AssemblyItem`,
+/// which activating an input writes, when it names only the keyboard's
+/// inputs, its text service's profile or its layout, once they are gone.
+/// An order naming other inputs too is kept, since Windows numbers its
+/// entries. The language's key goes once empty.
+// [spec:kbdgen:req:tsf.register.uninstall+3]
+pub fn forget_order(record: &KeyboardRegKey) -> io::Result<()> {
+    let profile = record
+        .product_code()
+        .and_then(|code| tsf::parse_guid(&code));
+    let layout = record.id().and_then(|id| layout_word(&id));
+    let names = |entry: &RegKey| {
+        profile.is_some_and(|profile| names_profile(entry, profile))
+            || layout.is_some_and(|word| names_layout(entry, word))
+    };
     let items = r"Software\Microsoft\CTF\SortOrder\AssemblyItem";
     let Some(key) = user_key(items) else {
         return Ok(());
@@ -307,14 +341,14 @@ pub fn forget_profile(profile: u128) -> io::Result<()> {
             continue;
         };
         let entries = registry_snapshot::keys(&category)?;
-        let only_profile = !entries.is_empty()
+        let only_keyboard = !entries.is_empty()
             && entries.iter().all(|name| {
                 user_key(&format!(r"{order}\{KEYBOARD_CATEGORY}\{name}"))
-                    .is_some_and(|entry| names_profile(&entry, profile))
+                    .is_some_and(|entry| names(&entry))
             });
-        if only_profile {
+        if only_keyboard {
             log::info!(
-                "Removing the user's input order of {language}, which names only the profile"
+                "Removing the user's input order of {language}, which names only the keyboard"
             );
             if let Some(order_key) = user_key(&order) {
                 order_key.remove_tree(KEYBOARD_CATEGORY)?;
@@ -533,5 +567,13 @@ mod tests {
                 item.kbid().eq_ignore_ascii_case("a0002400")
             });
         assert_eq!(String::from(selected), "0x0409:A0002400;0x2400:A0002400");
+    }
+
+    #[test]
+    fn layout_hkls_carry_the_layout_id() {
+        assert_eq!(layout_word("00cf"), Some(0xF0CF));
+        assert_eq!(layout_word("0FFF"), Some(0xFFFF));
+        assert_eq!(layout_word("1000"), None);
+        assert_eq!(layout_word("cf00x"), None);
     }
 }

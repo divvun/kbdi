@@ -261,7 +261,7 @@ pub fn ensure_profile(
 
 /// Unregisters `profile` under every LANGID TSF holds it under, then
 /// deletes what that left empty.
-// [spec:kbdgen:req:tsf.register.uninstall+2]
+// [spec:kbdgen:req:tsf.register.uninstall+3]
 pub fn unregister_profile(profile: u128) -> io::Result<()> {
     let lang_ids = registered_lang_ids(profile)?;
     if lang_ids.is_empty() {
@@ -297,7 +297,7 @@ const VIEWS: [(u32, &str); 2] = [(KEY_WOW64_64KEY, "64-bit"), (KEY_WOW64_32KEY, 
 /// and so do the text service's other keys, such as `Category`, which its
 /// own registration writes. These deletions are the only `CTF\TIP` writes
 /// kbdi makes itself.
-// [spec:kbdgen:req:tsf.register.uninstall+2]
+// [spec:kbdgen:req:tsf.register.uninstall+3]
 fn remove_emptied_languages(lang_ids: &[u16]) -> io::Result<()> {
     let tip = tip_path();
     for (view, name) in VIEWS {
