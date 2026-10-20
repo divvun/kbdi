@@ -150,13 +150,23 @@ This follows kbdgen's `docs/spec/tsf.md`, "Registration"; the code carries
   `clean` accept profile inputs.
 - `keyboard_enable --default-user` (elevated) adds the layout, not the profile,
   to the welcome screen (`.DEFAULT`, with `ILOT_DEFUSER4`). New users' profiles
-  are not changed.
+  are not changed. Each such call, also the one removing the layout, copies the
+  calling user's hidden dummy layouts into `.DEFAULT` too: the `0000LLLL`
+  layout, substituted by `00000409` and listed under `CTF\HiddenDummyLayouts`,
+  that Windows gives each of the user's languages whose inputs are all text
+  service profiles. kbdi compares `.DEFAULT` before and after, and lists what
+  enabling added besides the layout in the KLID's `kbdi Welcome Screen
+  Additions` value.
 - `keyboard_uninstall` removes the profile from the user's inputs, unregisters
   it under every LANGID TSF holds it under (unless another KLID still names the
   same product code), removes the layout input and the welcome screen entry,
-  then the KLID. The text service's own uninstaller must run only after the
-  last profile under its CLSID is gone: Windows ignores the removal of a
-  profile input whose text service is no longer registered.
+  then the KLID. With the welcome screen entry go what removing it added to
+  `.DEFAULT` and what enabling it added, unless another keyboard kbdi put on
+  the welcome screen is still there, which then takes over the list. Entries
+  `.DEFAULT` had before, or that changed since, stay, and `Preload` is
+  renumbered without gaps. The text service's own uninstaller must run only
+  after the last profile under its CLSID is gone: Windows ignores the removal
+  of a profile input whose text service is no longer registered.
 
 A test build can target a test registration of the text service by setting
 `KBDI_TSF_CLSID` to its CLSID at build time.
@@ -168,6 +178,21 @@ type in 64- and 32-bit processes and pass live verification; the fallback to and
 from the layout and the welcome screen entry were exercised; uninstall restored
 the language list, the inputs and `.DEFAULT` exactly. Several users with
 different transient LANGIDs, Arm64 and sign-in typing remain unverified.
+
+Validated on Windows 10 Enterprise LTSC 2021 x64 (19044), with x64 and x86
+kbdi, beside an installed keyboard that stayed untouched: after
+`--default-user` and `keyboard_uninstall` of a test keyboard of LANGID `2000`,
+`.DEFAULT`'s `Keyboard Layout`, `Control Panel\International` and
+`Software\Microsoft\CTF` were byte-identical, value order included. So they
+were when the welcome screen already had a keyboard of that LANGID and the
+dummy layout, when two such keyboards were uninstalled in either order, when
+Windows had to create `CTF\HiddenDummyLayouts`, and from the logged-on
+session. A layout added to the welcome screen later stayed, in Windows' order.
+The installer's sequence (`keyboard_install -e`, `--default-user`,
+`keyboard_uninstall`) also restored the user's `Keyboard Layout`,
+`Control Panel\International` and `Software\Microsoft\CTF`. TSF leaves the
+emptied `LanguageProfile` key of the profile's LANGID under the text service's
+`CTF\TIP` key in `HKLM`.
 
 ## License
 
