@@ -10,12 +10,15 @@
 //! gives the tag, and the user's list can give `0x2000` to another language,
 //! as to English (Sweden) on Windows 10. The welcome screen names transient
 //! LANGIDs by `.DEFAULT`'s own language list (`Control Panel\International\
-//! User Profile`), which kbdi leaves as it is; on that Windows 10 it gives
-//! `0x2000` to English (Sweden) too and the user's other transient LANGIDs
-//! to no language. `add` logs what it gives the LANGID. The user's LANGID
-//! is also the one Windows itself puts in `.DEFAULT` for the user's
-//! languages: in the dummy layouts below, and when it copies the user's
-//! settings to the welcome screen, language list included.
+//! User Profile`); on that Windows 10 it gives `0x2000` to English (Sweden)
+//! too and the user's other transient LANGIDs to no language. `add` logs
+//! what it gives the LANGID. The user's LANGID is also the one Windows
+//! itself puts in `.DEFAULT` for the user's languages: in the dummy layouts
+//! below, and when it copies the user's settings to the welcome screen,
+//! language list included. kbdi changes that list only to name a LANGID it
+//! gives no language and a tag it lacks: it adds the user's entry of the
+//! tag, as that copy would, and records it with the dummy layouts below.
+//! Entries the list has it never changes, nor one Windows changed since.
 //!
 //! `InstallLayoutOrTip` with `ILOT_DEFUSER4`, whether it adds or removes a
 //! layout, also writes the calling user's hidden dummy layouts into
@@ -35,7 +38,7 @@ use crate::types::InputListItem;
 use std::convert::TryFrom;
 use std::fmt;
 use std::io;
-use windows_registry::{LOCAL_MACHINE, USERS};
+use windows_registry::{CURRENT_USER, LOCAL_MACHINE, USERS};
 
 /// The value of a KLID's key that lists what enabling its layout on the
 /// welcome screen added to `.DEFAULT` besides the layout. kbdi writes it,
@@ -43,6 +46,9 @@ use windows_registry::{LOCAL_MACHINE, USERS};
 const ADDITIONS: &str = "kbdi Welcome Screen Additions";
 
 const KEYBOARD_LAYOUTS: &str = r"SYSTEM\CurrentControlSet\Control\Keyboard Layouts";
+
+/// A profile's language list: `Languages`, and a key per tag.
+const USER_PROFILE: &str = r"Control Panel\International\User Profile";
 
 /// A key of `.DEFAULT` that `InstallLayoutOrTip` writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,6 +83,9 @@ enum Entry {
     Preload(String),
     /// A value of `Substitutes` or `HiddenDummyLayouts`: key, name, data.
     Value(List, String, String),
+    /// A tag of `.DEFAULT`'s language list, given a transient LANGID: its
+    /// key and its place in `Languages`.
+    Language(String, u16),
 }
 
 /// The LANGID of a name in those keys, its low word: `0000LLLL` or
@@ -89,18 +98,23 @@ fn low_word(name: &str) -> Option<u16> {
 }
 
 impl Entry {
-    fn list(&self) -> List {
+    /// The key of `.DEFAULT` the entry is in, if one `InstallLayoutOrTip`
+    /// writes.
+    fn list(&self) -> Option<List> {
         match self {
-            Entry::Key(list) | Entry::Value(list, _, _) => *list,
-            Entry::Preload(_) => List::Preload,
+            Entry::Key(list) | Entry::Value(list, _, _) => Some(*list),
+            Entry::Preload(_) => Some(List::Preload),
+            Entry::Language(..) => None,
         }
     }
 
-    /// The LANGID of the name of a value; keys have none.
+    /// The LANGID of the name of a value, or the one given a language;
+    /// keys have none.
     fn lang_id(&self) -> Option<u16> {
         match self {
             Entry::Key(_) => None,
             Entry::Preload(name) | Entry::Value(_, name, _) => low_word(name),
+            Entry::Language(_, lang_id) => Some(*lang_id),
         }
     }
 
@@ -110,6 +124,9 @@ impl Entry {
             (Entry::Preload(a), Entry::Preload(b)) => a.eq_ignore_ascii_case(b),
             (Entry::Value(a, name_a, data_a), Entry::Value(b, name_b, data_b)) => {
                 a == b && name_a.eq_ignore_ascii_case(name_b) && data_a.eq_ignore_ascii_case(data_b)
+            }
+            (Entry::Language(a, id_a), Entry::Language(b, id_b)) => {
+                a.eq_ignore_ascii_case(b) && id_a == id_b
             }
             _ => false,
         }
@@ -128,11 +145,12 @@ impl Entry {
                 .values
                 .iter()
                 .any(|(old, old_name, _)| old == list && old_name.eq_ignore_ascii_case(name)),
+            Entry::Language(..) => false,
         }
     }
 
-    /// Parses the forms `Display` writes: `KEY`, `KEY=DATA` for `Preload`
-    /// and `KEY\NAME=DATA`.
+    /// Parses the forms `Display` writes: `KEY`, `KEY=DATA` for `Preload`,
+    /// `KEY\NAME=DATA` and `USER_PROFILE\TAG=LLLL`.
     fn parse(text: &str) -> Option<Self> {
         let Some((path, data)) = text.rsplit_once('=') else {
             return List::from_path(text).map(Entry::Key);
@@ -144,6 +162,13 @@ impl Entry {
             return Some(Entry::Preload(data.to_owned()));
         }
         let (key, name) = path.rsplit_once('\\')?;
+        if key == USER_PROFILE {
+            let lang_id = (data.len() == 4)
+                .then(|| u16::from_str_radix(data, 16).ok())
+                .flatten()
+                .filter(|&lang_id| is_transient(lang_id))?;
+            return (!name.is_empty()).then(|| Entry::Language(name.to_owned(), lang_id));
+        }
         match List::from_path(key)? {
             List::Preload => None,
             _ if name.is_empty() => None,
@@ -158,6 +183,7 @@ impl fmt::Display for Entry {
             Entry::Key(list) => f.write_str(list.path()),
             Entry::Preload(data) => write!(f, "{}={data}", List::Preload.path()),
             Entry::Value(list, name, data) => write!(f, r"{}\{name}={data}", list.path()),
+            Entry::Language(tag, lang_id) => write!(f, r"{USER_PROFILE}\{tag}={lang_id:04X}"),
         }
     }
 }
@@ -471,7 +497,7 @@ fn is_transient(lang_id: u16) -> bool {
 /// `.DEFAULT`'s language list: each tag with the transient LANGID it
 /// gives it, if any.
 fn default_languages() -> io::Result<Vec<(String, Option<u16>)>> {
-    let Ok(profile) = USERS.open(r".DEFAULT\Control Panel\International\User Profile") else {
+    let Ok(profile) = USERS.open(format!(r".DEFAULT\{USER_PROFILE}")) else {
         return Ok(Vec::new());
     };
     let mut languages = Vec::new();
@@ -523,6 +549,97 @@ fn welcome_language(
     }
 }
 
+fn default_profile() -> io::Result<windows_registry::Key> {
+    Ok(USERS
+        .options()
+        .read()
+        .write()
+        .open(format!(r".DEFAULT\{USER_PROFILE}"))?)
+}
+
+/// The calling user's entry of the language their list gives `lang_id`:
+/// its tag as the list spells it, and its cached name.
+fn user_language(lang_id: u16) -> io::Result<Option<(String, Option<String>)>> {
+    let Ok(profile) = CURRENT_USER.open(USER_PROFILE) else {
+        return Ok(None);
+    };
+    for tag in registry_snapshot::keys(&profile)? {
+        let Ok(key) = profile.open(&tag) else {
+            continue;
+        };
+        if key.get_u32("TransientLangId").ok() == Some(u32::from(lang_id)) {
+            return Ok(Some((tag, key.get_string("CachedLanguageName").ok())));
+        }
+    }
+    Ok(None)
+}
+
+/// Gives transient `lang_id` the calling user's language of it in
+/// `.DEFAULT`'s language list, as copying the user's settings would, when
+/// `languages`, that list, gives it no language and lacks the tag: the
+/// tag's key, with its cached name and the LANGID, and the tag at the end
+/// of `Languages`.
+fn name_lang_id(languages: &[(String, Option<u16>)], lang_id: u16) -> io::Result<Option<Entry>> {
+    if !is_transient(lang_id) || languages.iter().any(|(_, id)| *id == Some(lang_id)) {
+        return Ok(None);
+    }
+    let Some((tag, name)) = user_language(lang_id)? else {
+        log::warn!("Welcome screen: the user's language list gives {lang_id:04X} no language");
+        return Ok(None);
+    };
+    let profile = default_profile()?;
+    let Ok(list) = profile.get_multi_string("Languages") else {
+        log::warn!("Welcome screen: .DEFAULT has no language list to give {lang_id:04X} {tag}");
+        return Ok(None);
+    };
+    if languages.iter().any(|(old, _)| old.eq_ignore_ascii_case(&tag))
+        || list.iter().any(|old| old.eq_ignore_ascii_case(&tag))
+    {
+        return Ok(None);
+    }
+    let key = profile.create(&tag)?;
+    if let Some(name) = name {
+        key.set_string("CachedLanguageName", name)?;
+    }
+    key.set_u32("TransientLangId", u32::from(lang_id))?;
+    let list: Vec<&str> = list
+        .iter()
+        .map(String::as_str)
+        .chain([tag.as_str()])
+        .collect();
+    profile.set_multi_string("Languages", &list)?;
+    Ok(Some(Entry::Language(tag, lang_id)))
+}
+
+/// Takes `tag`, which `name_lang_id` gave `lang_id`, out of `.DEFAULT`'s
+/// language list, unless its key gives it another LANGID now.
+fn unname_lang_id(tag: &str, lang_id: u16) -> io::Result<()> {
+    let profile = default_profile()?;
+    let Ok(key) = profile.open(tag) else {
+        return Ok(());
+    };
+    if key.get_u32("TransientLangId").ok() != Some(u32::from(lang_id)) {
+        log::info!("Welcome screen: keeping {tag}, which Windows changed, in .DEFAULT's languages");
+        return Ok(());
+    }
+    if let Ok(list) = profile.get_multi_string("Languages") {
+        let kept: Vec<&str> = list
+            .iter()
+            .map(String::as_str)
+            .filter(|old| !old.eq_ignore_ascii_case(tag))
+            .collect();
+        if kept.len() != list.len() {
+            profile.set_multi_string("Languages", &kept)?;
+        }
+    }
+    profile.remove_tree(tag)?;
+    log::info!(
+        "Welcome screen: remove {}",
+        Entry::Language(tag.to_owned(), lang_id)
+    );
+    Ok(())
+}
+
 fn read_additions(klid: &str) -> io::Result<Option<Vec<Entry>>> {
     let Ok(key) = LOCAL_MACHINE.open(format!(r"{KEYBOARD_LAYOUTS}\{klid}")) else {
         return Ok(None);
@@ -565,12 +682,14 @@ fn recorded_klids() -> io::Result<Vec<String>> {
 }
 
 /// Adds the KLID's layout of `tag` to the welcome screen under `lang_id`,
-/// the calling user's LANGID of the tag, and notes in its key what else
-/// Windows added to `.DEFAULT`.
-// [spec:kbdgen:req:tsf.register.welcome]
+/// the calling user's LANGID of the tag, names the LANGID in `.DEFAULT`'s
+/// language list if it names none, and notes in the KLID's key what else
+/// Windows and kbdi added to `.DEFAULT`.
+// [spec:kbdgen:req:tsf.register.welcome+3]
 pub fn add(klid: &str, lang_id: u16, tag: &str) -> io::Result<()> {
     let layout = input(lang_id, klid)?;
-    let (misnomer, language) = welcome_language(&default_languages()?, tag, lang_id);
+    let languages = default_languages()?;
+    let (misnomer, language) = welcome_language(&languages, tag, lang_id);
     if misnomer {
         log::warn!("Welcome screen: adding {layout} for {tag}; {language}");
     } else {
@@ -585,9 +704,13 @@ pub fn add(klid: &str, lang_id: u16, tag: &str) -> io::Result<()> {
         );
     }
     input::install(&layout, input::ILOT_DEFUSER4)?;
-    let added = Layouts::read()?.added_since(&before);
+    let mut added = Layouts::read()?.added_since(&before);
     for entry in &added {
         log::info!("Welcome screen: Windows also added {entry}");
+    }
+    if let Some(entry) = name_lang_id(&languages, lang_id)? {
+        log::info!("Welcome screen: added {entry}, so that it names {lang_id:04X}");
+        added.push(entry);
     }
     let mut additions = read_additions(klid)?.unwrap_or_default();
     merge(&mut additions, added);
@@ -597,8 +720,8 @@ pub fn add(klid: &str, lang_id: u16, tag: &str) -> io::Result<()> {
 /// Takes the KLID's layout off the welcome screen, under whichever LANGIDs
 /// it is there, and with it the dummy layouts Windows added to `.DEFAULT`
 /// doing so and, unless another keyboard kbdi put there under their LANGID
-/// stays, when the layout was added.
-// [spec:kbdgen:req:tsf.register.welcome]
+/// stays, the dummy layouts and language added when the layout was added.
+// [spec:kbdgen:req:tsf.register.welcome+3]
 pub fn remove(klid: &str) -> io::Result<()> {
     let additions = read_additions(klid)?;
     let mut layouts = Layouts::read()?;
@@ -642,10 +765,18 @@ pub fn remove(klid: &str) -> io::Result<()> {
         }
         merge(&mut remove, gone);
     }
-    if remove.is_empty() {
-        return Ok(());
+    let (layout_entries, languages): (Vec<Entry>, Vec<Entry>) = remove
+        .into_iter()
+        .partition(|entry| entry.list().is_some());
+    if !layout_entries.is_empty() {
+        layouts.write(&layouts.without(&layout_entries))?;
     }
-    layouts.write(&layouts.without(&remove))
+    for entry in languages {
+        if let Entry::Language(tag, lang_id) = entry {
+            unname_lang_id(&tag, lang_id)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -876,6 +1007,7 @@ mod tests {
         let entries = [
             vec![Entry::Key(List::HiddenDummyLayouts)],
             dummy("00002400"),
+            vec![Entry::Language("vro-Latn".into(), 0x2400)],
         ]
         .concat();
         for entry in entries {
@@ -884,6 +1016,10 @@ mod tests {
         assert_eq!(
             dummy("00002400")[1].to_string(),
             r"Keyboard Layout\Substitutes\00002400=00000409"
+        );
+        assert_eq!(
+            Entry::Language("vro-Latn".into(), 0x2400).to_string(),
+            r"Control Panel\International\User Profile\vro-Latn=2400"
         );
         for bad in [
             "",
@@ -894,6 +1030,11 @@ mod tests {
             r"Keyboard Layout\Toggle\Hotkey=1",
             r"Keyboard Layout\Toggle",
             "00002400",
+            r"Control Panel\International\User Profile\=2400",
+            r"Control Panel\International\User Profile\vro-Latn=0409",
+            r"Control Panel\International\User Profile\vro-Latn=00002400",
+            r"Control Panel\International\User Profile\vro-Latn",
+            r"Control Panel\International\User Profile=2400",
         ] {
             assert_eq!(Entry::parse(bad), None, "{bad}");
         }
@@ -1073,6 +1214,29 @@ mod tests {
         assert!(kept.is_empty());
         assert_eq!(gone.len(), additions.len());
         assert_eq!(gone.last(), Some(&Entry::Key(List::HiddenDummyLayouts)));
+        // The language kbdi named a LANGID with goes with the LANGID's
+        // dummy layout, and takes no key with it.
+        let named = [
+            dummy("00002800"),
+            vec![Entry::Language("myv-Cyrl".into(), 0x2800)],
+            vec![Entry::Language("vro-Latn".into(), 0x2400)],
+        ]
+        .concat();
+        let (kept, gone) = distribute(named, |lang_id| {
+            heir(&state, "a0012000", &recorded, lang_id)
+        });
+        assert_eq!(
+            kept,
+            vec![(
+                "a0003000",
+                [
+                    dummy("00002800"),
+                    vec![Entry::Language("myv-Cyrl".into(), 0x2800)]
+                ]
+                .concat()
+            )]
+        );
+        assert_eq!(gone, vec![Entry::Language("vro-Latn".into(), 0x2400)]);
     }
 
     #[test]

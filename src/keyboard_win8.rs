@@ -117,7 +117,7 @@ pub fn register_installed_profile(tag: &str, product_code: &str) {
 /// layout goes under the LANGID that `LcidFromBcp47` gives `tag` for the
 /// calling user, which `enable` registered and enabled the profile under,
 /// not under its KLID's (see `welcome_screen`).
-// [spec:kbdgen:req:tsf.register.welcome]
+// [spec:kbdgen:req:tsf.register.welcome+3]
 // [spec:kbdgen:req:tsf.register.langid]
 pub fn enable_default_user(tag: &str, product_code: &str) -> Result<(), Error> {
     crate::win8::validate_language_tag(tag)?;
@@ -137,7 +137,7 @@ pub fn enable_default_user(tag: &str, product_code: &str) -> Result<(), Error> {
 
 /// Takes the layout off the welcome screen if `enable_default_user` put it
 /// there, before its KLID is removed, and restores the rest of `.DEFAULT`.
-// [spec:kbdgen:req:tsf.register.welcome]
+// [spec:kbdgen:req:tsf.register.welcome+3]
 pub fn disable_default_user(klid: &str) -> io::Result<()> {
     welcome_screen::remove(klid)
 }
