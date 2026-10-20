@@ -1,15 +1,34 @@
 //! The welcome screen's keyboard layouts, in `HKEY_USERS\.DEFAULT`
 //! (kbdgen's `tsf.register.welcome`).
 //!
+//! The layout goes under the LANGID that the calling user's language list
+//! gives the keyboard's tag, under which `keyboard_enable` registered and
+//! enabled its profile (`tsf.register.langid`). For a tag without a Windows
+//! locale that is a transient LANGID (`0x2000`, `0x2400`, …), which every
+//! profile assigns to the languages of its own list. The KLID's LANGID is
+//! not it: `install` names such KLIDs for `0x2000` whatever the user's list
+//! gives the tag, and the user's list can give `0x2000` to another language,
+//! as to English (Sweden) on Windows 10. The welcome screen names transient
+//! LANGIDs by `.DEFAULT`'s own language list (`Control Panel\International\
+//! User Profile`), which kbdi leaves as it is; on that Windows 10 it gives
+//! `0x2000` to English (Sweden) too and the user's other transient LANGIDs
+//! to no language. `add` logs what it gives the LANGID. The user's LANGID
+//! is also the one Windows itself puts in `.DEFAULT` for the user's
+//! languages: in the dummy layouts below, and when it copies the user's
+//! settings to the welcome screen, language list included.
+//!
 //! `InstallLayoutOrTip` with `ILOT_DEFUSER4`, whether it adds or removes a
 //! layout, also writes the calling user's hidden dummy layouts into
 //! `.DEFAULT`. Windows gives each of a user's languages whose inputs are all
 //! text service profiles such a layout: `0000LLLL` in `Preload`, substituted
 //! by a real layout and listed under `CTF\HiddenDummyLayouts`. Removing the
 //! keyboard's layout leaves them behind. kbdi therefore compares `.DEFAULT`
-//! before and after each call. It keeps what enabling added besides the
-//! layout in the KLID's key, and removes it, together with anything removing
-//! the layout added, when the keyboard leaves the welcome screen.
+//! before and after each call. It keeps the dummy layouts enabling added in
+//! the KLID's key, and removes them, together with those removing the
+//! layout added, when the keyboard leaves the welcome screen, unless another
+//! keyboard kbdi put there under the same LANGID stays, which then keeps
+//! them. Windows also names a LANGID's layouts anew (`d0012800`,
+//! `d0022800`, …) as they come and go; that adds nothing.
 use crate::platform::input;
 use crate::registry_snapshot;
 use crate::types::InputListItem;
@@ -60,7 +79,31 @@ enum Entry {
     Value(List, String, String),
 }
 
+/// The LANGID of a name in those keys, its low word: `0000LLLL` or
+/// `d0NNLLLL`.
+fn low_word(name: &str) -> Option<u16> {
+    (name.len() == 8)
+        .then(|| u32::from_str_radix(name, 16).ok())
+        .flatten()
+        .map(|value| value as u16)
+}
+
 impl Entry {
+    fn list(&self) -> List {
+        match self {
+            Entry::Key(list) | Entry::Value(list, _, _) => *list,
+            Entry::Preload(_) => List::Preload,
+        }
+    }
+
+    /// The LANGID of the name of a value; keys have none.
+    fn lang_id(&self) -> Option<u16> {
+        match self {
+            Entry::Key(_) => None,
+            Entry::Preload(name) | Entry::Value(_, name, _) => low_word(name),
+        }
+    }
+
     fn same(&self, other: &Entry) -> bool {
         match (self, other) {
             (Entry::Key(a), Entry::Key(b)) => a == b,
@@ -178,27 +221,56 @@ impl Layouts {
             })
     }
 
-    /// What `self` has that `before` lacks, except the KLID's own entries:
-    /// its substitute and the `Preload` value naming it or that substitute.
-    fn added_since(&self, before: &Layouts, klid: &str) -> Vec<Entry> {
-        let substitutes: Vec<&str> = self
+    /// The LANGIDs the KLID is on the welcome screen under, those it was
+    /// added under: the low word of a substitute's name (`00002400`, or
+    /// `d0012400` when the dummy layout holds that name), and the KLID's
+    /// own for a `Preload` value naming the KLID itself.
+    fn lang_ids(&self, klid: &str) -> Vec<u16> {
+        let direct = self
+            .preload
+            .iter()
+            .filter(|(_, data)| data.eq_ignore_ascii_case(klid))
+            .filter_map(|_| low_word(klid));
+        let substituted = self
             .values
             .iter()
             .filter(|(list, _, data)| *list == List::Substitutes && data.eq_ignore_ascii_case(klid))
-            .map(|(_, name, _)| name.as_str())
-            .collect();
-        let own = |entry: &Entry| match entry {
-            Entry::Key(_) => false,
-            Entry::Preload(data) => {
-                data.eq_ignore_ascii_case(klid)
-                    || substitutes
-                        .iter()
-                        .any(|name| name.eq_ignore_ascii_case(data))
+            .filter_map(|(_, name, _)| low_word(name));
+        let mut lang_ids = Vec::new();
+        for lang_id in direct.chain(substituted) {
+            if !lang_ids.contains(&lang_id) {
+                lang_ids.push(lang_id);
             }
-            Entry::Value(_, _, data) => data.eq_ignore_ascii_case(klid),
+        }
+        lang_ids
+    }
+
+    /// The welcome screen's inputs of the KLID, `LLLL:KLID`.
+    fn inputs(&self, klid: &str) -> Vec<String> {
+        self.lang_ids(klid)
+            .into_iter()
+            .filter_map(|lang_id| input(lang_id, klid).ok())
+            .collect()
+    }
+
+    /// What `self` has of hidden dummy layouts that `before` lacks: the
+    /// `Preload`, `Substitutes` and `HiddenDummyLayouts` values of the names
+    /// `self` lists under `HiddenDummyLayouts`, and the keys holding them.
+    /// That is all a call adds besides its layout. The rest it changes are
+    /// layouts, its own and others: Windows names a LANGID's layouts anew
+    /// (`d0012800`, `d0022800`, …) when one comes or goes.
+    fn added_since(&self, before: &Layouts) -> Vec<Entry> {
+        let dummy = |name: &str| {
+            self.values.iter().any(|(list, hidden, _)| {
+                *list == List::HiddenDummyLayouts && hidden.eq_ignore_ascii_case(name)
+            })
         };
         self.entries()
-            .filter(|entry| !own(entry) && !entry.existed_in(before))
+            .filter(|entry| match entry {
+                Entry::Key(_) => true,
+                Entry::Preload(name) | Entry::Value(_, name, _) => dummy(name),
+            })
+            .filter(|entry| !entry.existed_in(before))
             .collect()
     }
 
@@ -334,22 +406,121 @@ fn merge(record: &mut Vec<Entry>, additions: impl IntoIterator<Item = Entry>) {
     }
 }
 
-/// The keyboard that takes over `klid`'s additions while it is still on the
-/// welcome screen: the first other KLID in `recorded`, the KLIDs kbdi put on
-/// the welcome screen, that `layouts` still names.
-fn heir<'a>(layouts: &Layouts, klid: &str, recorded: &'a [String]) -> Option<&'a str> {
-    recorded
-        .iter()
-        .map(String::as_str)
-        .find(|other| !other.eq_ignore_ascii_case(klid) && layouts.mentions(other))
+/// The keyboard that takes over an addition of `klid` of `lang_id`, the
+/// dummy layout of that language: the first other KLID in `recorded`, the
+/// KLIDs kbdi put on the welcome screen, that `layouts` still has under
+/// `lang_id`. A keyboard of another language, as one added under its KLID's
+/// LANGID by an older kbdi, takes over nothing, so that removing a keyboard
+/// leaves `.DEFAULT` as it was before.
+fn heir<'a>(
+    layouts: &Layouts,
+    klid: &str,
+    recorded: &'a [String],
+    lang_id: u16,
+) -> Option<&'a str> {
+    recorded.iter().map(String::as_str).find(|other| {
+        !other.eq_ignore_ascii_case(klid) && layouts.lang_ids(other).contains(&lang_id)
+    })
 }
 
-/// The welcome screen's input for a KLID: under the LANGID of the KLID's
-/// low word, which is the language `install` created it for.
-fn layout(klid: &str) -> io::Result<String> {
-    let input = InputListItem::try_from(format!("{}:{klid}", klid.get(4..).unwrap_or("")).as_str())
+/// Splits `additions` into those `heir` takes over, by heir, and those to
+/// remove. A key goes with the values of it that an heir takes, if any.
+fn distribute<'a>(
+    additions: Vec<Entry>,
+    heir: impl Fn(u16) -> Option<&'a str>,
+) -> (Vec<(&'a str, Vec<Entry>)>, Vec<Entry>) {
+    let mut kept: Vec<(&str, Vec<Entry>)> = Vec::new();
+    let mut gone = Vec::new();
+    let (keys, values): (Vec<Entry>, Vec<Entry>) = additions
+        .into_iter()
+        .partition(|entry| matches!(entry, Entry::Key(_)));
+    for entry in values {
+        match entry.lang_id().and_then(&heir) {
+            Some(heir) => match kept.iter_mut().find(|(name, _)| *name == heir) {
+                Some((_, entries)) => entries.push(entry),
+                None => kept.push((heir, vec![entry])),
+            },
+            None => gone.push(entry),
+        }
+    }
+    for key in keys {
+        match kept
+            .iter_mut()
+            .find(|(_, entries)| entries.iter().any(|entry| entry.list() == key.list()))
+        {
+            Some((_, entries)) => entries.push(key),
+            None => gone.push(key),
+        }
+    }
+    (kept, gone)
+}
+
+/// The welcome screen's input of the KLID under `lang_id`, `LLLL:KLID`.
+fn input(lang_id: u16, klid: &str) -> io::Result<String> {
+    let input = InputListItem::try_from(format!("{lang_id:04X}:{klid}").as_str())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid keyboard input ID"))?;
     Ok(format!("{}:{}", input.lcid(), input.kbid()))
+}
+
+/// Whether `lang_id` is transient: `LANG_NEUTRAL` with a sublanguage from
+/// 8 up (`0x2000`, `0x2400`, …), assigned by each profile's language list.
+fn is_transient(lang_id: u16) -> bool {
+    lang_id >= 0x2000 && lang_id & 0x03FF == 0
+}
+
+/// `.DEFAULT`'s language list: each tag with the transient LANGID it
+/// gives it, if any.
+fn default_languages() -> io::Result<Vec<(String, Option<u16>)>> {
+    let Ok(profile) = USERS.open(r".DEFAULT\Control Panel\International\User Profile") else {
+        return Ok(Vec::new());
+    };
+    let mut languages = Vec::new();
+    for tag in registry_snapshot::keys(&profile)? {
+        let lang_id = profile
+            .open(&tag)
+            .and_then(|key| key.get_u32("TransientLangId"))
+            .ok()
+            .and_then(|value| u16::try_from(value).ok());
+        languages.push((tag, lang_id));
+    }
+    Ok(languages)
+}
+
+/// What the welcome screen will call the layout of `tag` under `lang_id`,
+/// by `.DEFAULT`'s language list, and whether that is a misnomer to warn
+/// of. A LANGID that is not transient names its own language.
+fn welcome_language(
+    languages: &[(String, Option<u16>)],
+    tag: &str,
+    lang_id: u16,
+) -> (bool, String) {
+    if !is_transient(lang_id) {
+        return (false, format!("{lang_id:04X} is not transient"));
+    }
+    let named = languages.iter().find(|(_, id)| *id == Some(lang_id));
+    let own = languages
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(tag))
+        .and_then(|(_, id)| *id);
+    match (named, own) {
+        (Some((name, _)), _) if name.eq_ignore_ascii_case(tag) => {
+            (false, format!(".DEFAULT gives {lang_id:04X} to {name} too"))
+        }
+        (Some((name, _)), _) => (
+            true,
+            format!(
+                ".DEFAULT gives {lang_id:04X} to {name}, so the welcome screen lists the layout under {name}"
+            ),
+        ),
+        (None, Some(other)) => (
+            true,
+            format!(".DEFAULT gives {tag} {other:04X}, and {lang_id:04X} to no language"),
+        ),
+        (None, None) => (
+            false,
+            format!(".DEFAULT gives {lang_id:04X} to no language"),
+        ),
+    }
 }
 
 fn read_additions(klid: &str) -> io::Result<Option<Vec<Entry>>> {
@@ -393,13 +564,28 @@ fn recorded_klids() -> io::Result<Vec<String>> {
     Ok(klids)
 }
 
-/// Adds the KLID's layout to the welcome screen and notes in its key what
-/// else Windows added to `.DEFAULT`.
+/// Adds the KLID's layout of `tag` to the welcome screen under `lang_id`,
+/// the calling user's LANGID of the tag, and notes in its key what else
+/// Windows added to `.DEFAULT`.
 // [spec:kbdgen:req:tsf.register.welcome]
-pub fn add(klid: &str) -> io::Result<()> {
+pub fn add(klid: &str, lang_id: u16, tag: &str) -> io::Result<()> {
+    let layout = input(lang_id, klid)?;
+    let (misnomer, language) = welcome_language(&default_languages()?, tag, lang_id);
+    if misnomer {
+        log::warn!("Welcome screen: adding {layout} for {tag}; {language}");
+    } else {
+        log::info!("Welcome screen: adding {layout} for {tag}; {language}");
+    }
     let before = Layouts::read()?;
-    input::install(&layout(klid)?, input::ILOT_DEFUSER4)?;
-    let added = Layouts::read()?.added_since(&before, klid);
+    let other = before.inputs(klid);
+    if other.iter().any(|old| *old != layout) {
+        log::warn!(
+            "Welcome screen: {klid} is already there as {}",
+            other.join(";")
+        );
+    }
+    input::install(&layout, input::ILOT_DEFUSER4)?;
+    let added = Layouts::read()?.added_since(&before);
     for entry in &added {
         log::info!("Welcome screen: Windows also added {entry}");
     }
@@ -408,8 +594,9 @@ pub fn add(klid: &str) -> io::Result<()> {
     write_additions(klid, &additions)
 }
 
-/// Takes the KLID's layout off the welcome screen, and with it what Windows
-/// added to `.DEFAULT` doing so and, unless another keyboard kbdi put there
+/// Takes the KLID's layout off the welcome screen, under whichever LANGIDs
+/// it is there, and with it the dummy layouts Windows added to `.DEFAULT`
+/// doing so and, unless another keyboard kbdi put there under their LANGID
 /// stays, when the layout was added.
 // [spec:kbdgen:req:tsf.register.welcome]
 pub fn remove(klid: &str) -> io::Result<()> {
@@ -417,27 +604,43 @@ pub fn remove(klid: &str) -> io::Result<()> {
     let mut layouts = Layouts::read()?;
     let mut remove = Vec::new();
     if layouts.mentions(klid) {
-        input::install(&layout(klid)?, input::ILOT_DEFUSER4 | input::ILOT_UNINSTALL)?;
+        let inputs = layouts.inputs(klid);
+        if inputs.is_empty() {
+            return Err(io::Error::other(format!(
+                "the welcome screen names keyboard {klid} under no LANGID kbdi can read"
+            )));
+        }
+        let inputs = inputs.join(";");
+        log::info!("Welcome screen: removing {inputs}");
+        input::install(&inputs, input::ILOT_DEFUSER4 | input::ILOT_UNINSTALL)?;
         let after = Layouts::read()?;
         if after.mentions(klid) {
             return Err(io::Error::other(format!(
                 "Windows kept keyboard {klid} on the welcome screen"
             )));
         }
-        remove = after.added_since(&layouts, klid);
+        remove = after.added_since(&layouts);
         layouts = after;
     }
     if let Some(additions) = additions.filter(|additions| !additions.is_empty()) {
         let recorded = recorded_klids()?;
-        match heir(&layouts, klid, &recorded) {
-            Some(heir) => {
-                log::info!("Welcome screen: {heir} keeps what adding {klid} added");
-                let mut kept = read_additions(heir)?.unwrap_or_default();
-                merge(&mut kept, additions);
-                write_additions(heir, &kept)?;
-            }
-            None => merge(&mut remove, additions),
+        let (kept, gone) = distribute(additions, |lang_id| {
+            heir(&layouts, klid, &recorded, lang_id)
+        });
+        for (heir, entries) in kept {
+            log::info!(
+                "Welcome screen: {heir} keeps what adding {klid} added of its language: {}",
+                entries
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            let mut record = read_additions(heir)?.unwrap_or_default();
+            merge(&mut record, entries);
+            write_additions(heir, &record)?;
         }
+        merge(&mut remove, gone);
     }
     if remove.is_empty() {
         return Ok(());
@@ -494,7 +697,7 @@ mod tests {
             ],
             &[("00002400", "00000409")],
         );
-        assert_eq!(after.added_since(&before, "a0012000"), dummy("00002400"));
+        assert_eq!(after.added_since(&before), dummy("00002400"));
         assert!(after.mentions("A0012000"));
         assert!(!before.mentions("a0012000"));
         // Removing the layout and its additions restores `.DEFAULT`.
@@ -503,7 +706,7 @@ mod tests {
             &[("00000809", "0000041d"), ("00002400", "00000409")],
             &[("00002400", "00000409")],
         );
-        assert_eq!(removed.added_since(&after, "a0012000"), vec![]);
+        assert_eq!(removed.added_since(&after), vec![]);
         assert_eq!(removed.without(&dummy("00002400")), before);
     }
 
@@ -521,7 +724,7 @@ mod tests {
             ],
             &[("00002000", "00000409")],
         );
-        assert_eq!(after.added_since(&before, "a0002000"), dummy("00002000"));
+        assert_eq!(after.added_since(&before), dummy("00002000"));
     }
 
     /// What the welcome screen had before, the same dummy layout, another
@@ -542,11 +745,11 @@ mod tests {
             ],
             &[("00002400", "00000409")],
         );
-        assert_eq!(after.added_since(&before, "a0022000"), vec![]);
+        assert_eq!(after.added_since(&before), vec![]);
         // A value Windows changed is not an addition either.
         let changed = layouts(&["00000409"], &[("00002400", "00000407")], &[]);
         let before = layouts(&["00000409"], &[("00002400", "00000409")], &[]);
-        assert_eq!(changed.added_since(&before, "a0022000"), vec![]);
+        assert_eq!(changed.added_since(&before), vec![]);
     }
 
     /// A key Windows created goes again once it is empty.
@@ -559,7 +762,7 @@ mod tests {
             &[("00002000", "a0012000"), ("00002400", "00000409")],
             &[("00002400", "00000409")],
         );
-        let added = after.added_since(&before, "a0012000");
+        let added = after.added_since(&before);
         assert_eq!(
             added,
             [
@@ -653,10 +856,13 @@ mod tests {
             "a0032000".to_owned(),
             "a0022000".to_owned(),
         ];
-        assert_eq!(heir(&state, "a0012000", &recorded), Some("a0022000"));
+        assert_eq!(
+            heir(&state, "a0012000", &recorded, 0x2000),
+            Some("a0022000")
+        );
         // Not to itself, nor to one no longer there.
         let state = layouts(&["00000409", "00002000"], &[("00002000", "00000409")], &[]);
-        assert_eq!(heir(&state, "a0012000", &recorded), None);
+        assert_eq!(heir(&state, "a0012000", &recorded, 0x2000), None);
         let mut record = dummy("00002000");
         merge(
             &mut record,
@@ -694,9 +900,211 @@ mod tests {
     }
 
     #[test]
-    fn welcome_screen_layout_uses_the_klid_language() {
-        assert_eq!(layout("a0002000").unwrap(), "2000:A0002000");
-        assert_eq!(layout("A001043b").unwrap(), "043B:A001043B");
-        assert!(layout("a00").is_err());
+    fn welcome_screen_inputs_take_the_given_lang_id() {
+        assert_eq!(input(0x2400, "a0002000").unwrap(), "2400:A0002000");
+        assert_eq!(input(0x043B, "A001043b").unwrap(), "043B:A001043B");
+        assert!(input(0x2400, "a00").is_err());
+    }
+
+    /// A layout added under the KLID's LANGID, as kbdi did before, under
+    /// the user's LANGID beside its dummy layout, as on Windows 11, and
+    /// both: removal finds each LANGID.
+    #[test]
+    fn inputs_are_found_under_the_lang_ids_they_were_added_under() {
+        let old = layouts(
+            &["00000409", "00002000", "00002400"],
+            &[("00002000", "a0002000"), ("00002400", "00000409")],
+            &[("00002400", "00000409")],
+        );
+        assert_eq!(old.inputs("A0002000"), ["2000:A0002000"]);
+        let new = layouts(
+            &["00000409", "00002000", "00002400", "d0012400"],
+            &[
+                ("00002000", "a0012000"),
+                ("00002400", "00000409"),
+                ("d0012400", "a0002000"),
+            ],
+            &[("00002400", "00000409")],
+        );
+        assert_eq!(new.inputs("a0002000"), ["2400:A0002000"]);
+        assert_eq!(new.inputs("a0012000"), ["2000:A0012000"]);
+        let both = layouts(
+            &["00000409", "00002000", "d0012400"],
+            &[("00002000", "a0002000"), ("d0012400", "a0002000")],
+            &[],
+        );
+        assert_eq!(both.inputs("a0002000"), ["2000:A0002000", "2400:A0002000"]);
+        // A layout Windows lists by its own KLID, and none at all.
+        let direct = layouts(&["00000409", "0000043b"], &[], &[]);
+        assert_eq!(direct.inputs("0000043B"), ["043B:0000043B"]);
+        assert!(direct.inputs("a0002000").is_empty());
+        assert!(!direct.mentions("a0002000"));
+        // A substitute name kbdi cannot read is no input.
+        let odd = layouts(&["00000409"], &[("2400", "a0002000")], &[]);
+        assert!(odd.mentions("a0002000") && odd.inputs("a0002000").is_empty());
+    }
+
+    /// Windows 10: the user's dummy layout of the profile-only language,
+    /// `00002400`, comes with the layout under the same LANGID, which then
+    /// takes a `d0` name. Neither the dummy layout the welcome screen had
+    /// for another keyboard nor the layout is an addition.
+    #[test]
+    fn layout_under_the_user_lang_id_beside_its_dummy_layout() {
+        let before = layouts(
+            &["00000409", "00000809", "00002000", "00002400"],
+            &[
+                ("00000809", "0000041d"),
+                ("00002000", "a0002000"),
+                ("00002400", "00000409"),
+            ],
+            &[("00002400", "00000409")],
+        );
+        let after = layouts(
+            &[
+                "00000409", "00000809", "00002000", "00002400", "00002800", "d0012800",
+            ],
+            &[
+                ("00000809", "0000041d"),
+                ("00002000", "a0002000"),
+                ("00002400", "00000409"),
+                ("00002800", "00000409"),
+                ("d0012800", "a0012000"),
+            ],
+            &[("00002400", "00000409"), ("00002800", "00000409")],
+        );
+        assert_eq!(after.inputs("a0012000"), ["2800:A0012000"]);
+        assert_eq!(after.added_since(&before), dummy("00002800"));
+        let removed = layouts(
+            &["00000409", "00000809", "00002000", "00002400", "00002800"],
+            &[
+                ("00000809", "0000041d"),
+                ("00002000", "a0002000"),
+                ("00002400", "00000409"),
+                ("00002800", "00000409"),
+            ],
+            &[("00002400", "00000409"), ("00002800", "00000409")],
+        );
+        assert_eq!(removed.added_since(&after), vec![]);
+        assert_eq!(removed.without(&dummy("00002800")), before);
+    }
+
+    /// Windows 10: a second keyboard under `0x2800`, of a lower KLID,
+    /// takes `d0012800` and the first moves to `d0022800`. That is no
+    /// addition, and neither is its removal, which moves it back.
+    #[test]
+    fn layouts_windows_names_anew_are_not_additions() {
+        let preload = ["00000409", "00002000", "00002400", "00002800", "d0012800"];
+        let hidden = [("00002400", "00000409"), ("00002800", "00000409")];
+        let one = layouts(
+            &preload,
+            &[
+                ("00002000", "a0002000"),
+                ("00002400", "00000409"),
+                ("00002800", "00000409"),
+                ("d0012800", "a0012000"),
+            ],
+            &hidden,
+        );
+        let two = layouts(
+            &[&preload[..], &["d0022800"]].concat(),
+            &[
+                ("00002000", "a0002000"),
+                ("00002400", "00000409"),
+                ("00002800", "00000409"),
+                ("d0012800", "a0003000"),
+                ("d0022800", "a0012000"),
+            ],
+            &hidden,
+        );
+        assert_eq!(two.added_since(&one), vec![]);
+        assert_eq!(one.added_since(&two), vec![]);
+        assert_eq!(two.inputs("a0012000"), ["2800:A0012000"]);
+        assert_eq!(two.inputs("a0003000"), ["2800:A0003000"]);
+    }
+
+    /// The Võro keyboard of an older kbdi is under `0x2000`, so it takes
+    /// over no dummy layout of `0x2800`; a keyboard under `0x2800` does.
+    #[test]
+    fn additions_pass_only_to_a_keyboard_of_their_language() {
+        let state = layouts(
+            &["00000409", "00002000", "00002400", "00002800", "d0012800"],
+            &[
+                ("00002000", "a0002000"),
+                ("00002400", "00000409"),
+                ("00002800", "00000409"),
+                ("d0012800", "a0003000"),
+            ],
+            &[("00002400", "00000409"), ("00002800", "00000409")],
+        );
+        let recorded = [
+            "a0002000".to_owned(),
+            "a0003000".to_owned(),
+            "a0012000".to_owned(),
+        ];
+        assert_eq!(
+            heir(&state, "a0012000", &recorded, 0x2800),
+            Some("a0003000")
+        );
+        assert_eq!(heir(&state, "a0012000", &recorded, 0x2400), None);
+        assert_eq!(heir(&state, "a0003000", &recorded, 0x2800), None);
+        let additions = [
+            vec![Entry::Key(List::HiddenDummyLayouts)],
+            dummy("00002800"),
+            dummy("00002400"),
+        ]
+        .concat();
+        let (kept, gone) = distribute(additions.clone(), |lang_id| {
+            heir(&state, "a0012000", &recorded, lang_id)
+        });
+        assert_eq!(
+            kept,
+            vec![(
+                "a0003000",
+                [
+                    dummy("00002800"),
+                    vec![Entry::Key(List::HiddenDummyLayouts)]
+                ]
+                .concat()
+            )]
+        );
+        assert_eq!(gone, dummy("00002400"));
+        // Without an heir, all go, keys too.
+        let (kept, gone) = distribute(additions.clone(), |_| None);
+        assert!(kept.is_empty());
+        assert_eq!(gone.len(), additions.len());
+        assert_eq!(gone.last(), Some(&Entry::Key(List::HiddenDummyLayouts)));
+    }
+
+    #[test]
+    fn transient_lang_ids_are_neutral_with_a_high_sublanguage() {
+        for lang_id in [0x2000, 0x2400, 0x2800, 0x5000] {
+            assert!(is_transient(lang_id), "{lang_id:04X}");
+        }
+        for lang_id in [0x0409, 0x0C3B, 0x1000, 0x0C00, 0x1400, 0x2001, 0x203B] {
+            assert!(!is_transient(lang_id), "{lang_id:04X}");
+        }
+    }
+
+    /// `.DEFAULT` of Windows 10 LTSC, copied from a user with en-SE first.
+    #[test]
+    fn welcome_language_is_named_by_the_default_language_list() {
+        let languages = vec![
+            ("en-SE".to_owned(), Some(0x2000)),
+            ("en-US".to_owned(), None),
+            ("en-GB".to_owned(), None),
+        ];
+        let (misnomer, text) = welcome_language(&languages, "vro-Latn", 0x2000);
+        assert!(misnomer);
+        assert!(text.ends_with("under en-SE"), "{text}");
+        assert_eq!(
+            welcome_language(&languages, "vro-Latn", 0x2400),
+            (false, ".DEFAULT gives 2400 to no language".into())
+        );
+        assert!(!welcome_language(&languages, "se-FI", 0x0C3B).0);
+        let copied = [languages, vec![("vro-Latn".to_owned(), Some(0x2400))]].concat();
+        assert!(!welcome_language(&copied, "VRO-latn", 0x2400).0);
+        let (misnomer, text) = welcome_language(&copied, "vro-Latn", 0x2800);
+        assert!(misnomer);
+        assert!(text.contains("vro-Latn 2400"), "{text}");
     }
 }

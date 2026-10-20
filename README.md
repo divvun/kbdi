@@ -172,20 +172,29 @@ This follows kbdgen's `docs/spec/tsf.md`, "Registration"; the code carries
   before and removes the profile input instead. Live verification and
   `clean` accept profile inputs.
 - `keyboard_enable --default-user` (elevated) adds the layout, not the profile,
-  to the welcome screen (`.DEFAULT`, with `ILOT_DEFUSER4`). New users' profiles
-  are not changed. Each such call, also the one removing the layout, copies the
-  calling user's hidden dummy layouts into `.DEFAULT` too: the `0000LLLL`
-  layout, substituted by `00000409` and listed under `CTF\HiddenDummyLayouts`,
-  that Windows gives each of the user's languages whose inputs are all text
-  service profiles. kbdi compares `.DEFAULT` before and after, and lists what
-  enabling added besides the layout in the KLID's `kbdi Welcome Screen
-  Additions` value.
+  to the welcome screen (`.DEFAULT`, with `ILOT_DEFUSER4`), under the LANGID the
+  calling user's language list gives the tag, under which `keyboard_enable`
+  registered and enabled the profile. The KLID's LANGID is `2000` for every tag
+  without a Windows locale, which the user's list may give to another language,
+  such as English (Sweden). The welcome screen names transient LANGIDs by
+  `.DEFAULT`'s own language list, which kbdi leaves as it is and which may give
+  the user's LANGID to no language or another one; kbdi logs which. New users'
+  profiles are not changed. Each such call, also the one removing the layout,
+  copies the calling user's hidden dummy layouts into `.DEFAULT` too: the
+  `0000LLLL` layout, substituted by `00000409` and listed under
+  `CTF\HiddenDummyLayouts`, that Windows gives each of the user's languages
+  whose inputs are all text service profiles. kbdi compares `.DEFAULT` before
+  and after, and lists the dummy layouts enabling added in the KLID's `kbdi
+  Welcome Screen Additions` value. Windows also names a LANGID's layouts anew
+  (`d0012800`, `d0022800`, …) as they come and go; that adds nothing.
 - `keyboard_uninstall` removes the profile from the user's inputs, unregisters
   it under every LANGID TSF holds it under (unless another KLID still names the
   same product code), removes the layout input and the welcome screen entry,
-  then the KLID. With the welcome screen entry go what removing it added to
-  `.DEFAULT` and what enabling it added, unless another keyboard kbdi put on
-  the welcome screen is still there, which then takes over the list. Entries
+  under whichever LANGIDs it is there (an older kbdi added it under the
+  KLID's), then the KLID. With the welcome screen entry go the dummy layouts
+  removing it added to `.DEFAULT` and those enabling it added, unless another
+  keyboard kbdi put on the welcome screen under the same LANGID is still there,
+  which then keeps them. Entries
   `.DEFAULT` had before, or that changed since, stay, and `Preload` is
   renumbered without gaps. The text service's own uninstaller must run only
   after the last profile under its CLSID is gone: Windows ignores the removal
@@ -216,6 +225,21 @@ The installer's sequence (`keyboard_install -e`, `--default-user`,
 `Control Panel\International` and `Software\Microsoft\CTF`. TSF leaves the
 emptied `LanguageProfile` key of the profile's LANGID under the text service's
 `CTF\TIP` key in `HKLM`.
+
+Validated again on that Windows 10, beside the installed Võro keyboard (KLID
+`a0002000`, its profile under `2400`, on the welcome screen under `2000` from
+an older kbdi), with test keyboards of `myv-Cyrl`, which the user's list gave
+`2800` while English (Sweden) held `2000`. The welcome screen got
+`2800:A0012000`, as `d0012800` beside the dummy layout `00002800`, and the
+second keyboard `2800:A0022000`. Two such keyboards, enabled and uninstalled
+in either order with x64 and x86 kbdi, left `.DEFAULT`'s `Keyboard Layout`,
+`Control Panel\International` and `Software\Microsoft\CTF`, the user's
+`Keyboard Layout`, `Control Panel\International`, `Software\Microsoft\CTF`
+and `Software\Microsoft\Input`, and `HKLM`'s `Keyboard Layouts`
+byte-identical. The Võro keyboard's welcome screen entries and record stayed
+as they were. The layout fallback, without the text service, leaves the
+language's `CTF\SortOrder\AssemblyItem` entry naming the layout's HKL in
+`HKCU`.
 
 ## License
 

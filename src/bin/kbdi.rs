@@ -152,7 +152,7 @@ fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
         } => {
             if default_user {
                 #[cfg(not(feature = "legacy"))]
-                return Ok(keyboard::enable_default_user(&guid)?);
+                return Ok(keyboard::enable_default_user(&tag, &guid)?);
                 #[cfg(feature = "legacy")]
                 {
                     eprintln!("--default-user is not implemented; no keyboard changes were made");

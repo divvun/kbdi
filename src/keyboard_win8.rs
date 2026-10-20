@@ -113,11 +113,25 @@ pub fn register_installed_profile(tag: &str, product_code: &str) {
 }
 
 /// Offers the keyboard on the welcome screen as its layout, not the text
-/// service's profile, so sign-in never depends on the text service.
+/// service's profile, so sign-in never depends on the text service. The
+/// layout goes under the LANGID that `LcidFromBcp47` gives `tag` for the
+/// calling user, which `enable` registered and enabled the profile under,
+/// not under its KLID's (see `welcome_screen`).
 // [spec:kbdgen:req:tsf.register.welcome]
-pub fn enable_default_user(product_code: &str) -> Result<(), Error> {
+// [spec:kbdgen:req:tsf.register.langid]
+pub fn enable_default_user(tag: &str, product_code: &str) -> Result<(), Error> {
+    crate::win8::validate_language_tag(tag)?;
     let record = KeyboardRegKey::find_by_product_code(product_code).ok_or(Error::NotFound)?;
-    welcome_screen::add(record.regkey_id())?;
+    let lang_id = match bcp47langs::lcid_from_bcp47(tag) {
+        Some(lcid) if lcid != 0x1000 => lcid as u16,
+        _ => {
+            return Err(io::Error::other(format!(
+                "{tag} has no language ID for this user; enable the keyboard for this user before offering it on the welcome screen"
+            ))
+            .into());
+        }
+    };
+    welcome_screen::add(record.regkey_id(), lang_id, tag)?;
     Ok(())
 }
 
