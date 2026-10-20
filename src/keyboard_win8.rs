@@ -269,7 +269,9 @@ fn names_profile(entry: &RegKey, profile: u128) -> bool {
 /// `ILOT_UNINSTALL` leaves at 0, and a language's input order under
 /// `CTF\SortOrder\AssemblyItem`, which activating the profile writes, when
 /// it names only the profile. An order naming other inputs too is kept,
-/// since Windows numbers its entries.
+/// since Windows numbers its entries. As in `HKLM` (`tsf::unregister_profile`),
+/// the language keys the profile was removed from go once empty, then the
+/// keys above them; in `HKCU` the text service has no keys of its own.
 // [spec:kbdgen:req:tsf.register.uninstall+1]
 pub fn forget_profile(profile: u128) -> io::Result<()> {
     let tips = r"Software\Microsoft\CTF\TIP";
@@ -280,13 +282,17 @@ pub fn forget_profile(profile: u128) -> io::Result<()> {
             let Some(profiles) = user_key(&format!(r"{languages}\{language}")) else {
                 continue;
             };
+            let mut removed = false;
             for name in registry_snapshot::keys(&profiles)? {
                 if tsf::parse_guid(&name) == Some(profile) {
                     log::info!("Removing the user's state of profile {name} under {language}");
                     profiles.remove_tree(&name)?;
+                    removed = true;
                 }
             }
-            remove_if_empty(&languages, &language)?;
+            if removed {
+                remove_if_empty(&languages, &language)?;
+            }
         }
         remove_if_empty(&format!(r"{tips}\{clsid}"), "LanguageProfile")?;
         remove_if_empty(tips, &clsid)?;

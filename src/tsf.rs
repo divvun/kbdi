@@ -5,6 +5,10 @@
 use crate::platform::profile_mgr::ProfileMgr;
 use std::{fmt, io, path::PathBuf};
 use windows_registry::LOCAL_MACHINE;
+use windows_sys::Win32::{
+    Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS},
+    System::Registry::{KEY_WOW64_32KEY, KEY_WOW64_64KEY, RegDeleteKeyExW},
+};
 
 /// The text service's CLSID (`{5E668C8A-2FB8-41D2-90B1-9C132653FA9D}`), or the
 /// GUID `KBDI_TSF_CLSID` held at build time, so a test build of kbdi can drive
@@ -145,6 +149,21 @@ fn native_key(path: &str) -> windows_registry::Result<windows_registry::Key> {
     LOCAL_MACHINE.options().read().wow64_64().open(path)
 }
 
+/// The text service's key under `CTF\TIP` in `HKLM`.
+fn tip_path() -> String {
+    format!(r"SOFTWARE\Microsoft\CTF\TIP\{}", braced(CLSID))
+}
+
+/// The LANGID that a key under `LanguageProfile` is named for: TSF names
+/// them `0x00002400`.
+fn language_key_lang_id(name: &str) -> Option<u16> {
+    let digits = name
+        .strip_prefix("0x")
+        .or_else(|| name.strip_prefix("0X"))
+        .unwrap_or(name);
+    u16::try_from(u32::from_str_radix(digits, 16).ok()?).ok()
+}
+
 /// Whether the text service is installed: its CLSID names an existing DLL.
 // [spec:kbdgen:req:tsf.register.profile]
 pub fn available() -> bool {
@@ -163,22 +182,16 @@ pub fn available() -> bool {
 }
 
 /// The LANGIDs under which `profile` is registered, read from the profiles
-/// TSF wrote. kbdi only reads `CTF\TIP`; it writes through `ProfileMgr`.
+/// TSF wrote. kbdi registers and unregisters profiles only through
+/// `ProfileMgr`; see `remove_emptied_languages` for what it deletes itself.
 pub fn registered_lang_ids(profile: u128) -> io::Result<Vec<u16>> {
-    let path = format!(
-        r"SOFTWARE\Microsoft\CTF\TIP\{}\LanguageProfile",
-        braced(CLSID)
-    );
+    let path = format!(r"{}\LanguageProfile", tip_path());
     let Ok(languages) = native_key(&path) else {
         return Ok(Vec::new());
     };
     let mut result = Vec::new();
     for language in crate::registry_snapshot::keys(&languages)? {
-        let digits = language
-            .strip_prefix("0x")
-            .or_else(|| language.strip_prefix("0X"))
-            .unwrap_or(&language);
-        let Ok(lang_id) = u32::from_str_radix(digits, 16) else {
+        let Some(lang_id) = language_key_lang_id(&language) else {
             continue;
         };
         let Ok(profiles) = native_key(&format!(r"{path}\{language}")) else {
@@ -188,7 +201,7 @@ pub fn registered_lang_ids(profile: u128) -> io::Result<Vec<u16>> {
             .iter()
             .any(|name| parse_guid(name) == Some(profile))
         {
-            result.push(lang_id as u16);
+            result.push(lang_id);
         }
     }
     Ok(result)
@@ -246,7 +259,8 @@ pub fn ensure_profile(
     Ok(())
 }
 
-/// Unregisters `profile` under every LANGID TSF holds it under.
+/// Unregisters `profile` under every LANGID TSF holds it under, then
+/// deletes what that left empty.
 // [spec:kbdgen:req:tsf.register.uninstall+1]
 pub fn unregister_profile(profile: u128) -> io::Result<()> {
     let lang_ids = registered_lang_ids(profile)?;
@@ -254,7 +268,7 @@ pub fn unregister_profile(profile: u128) -> io::Result<()> {
         return Ok(());
     }
     let manager = ProfileMgr::new()?;
-    for lang_id in lang_ids {
+    for &lang_id in &lang_ids {
         log::info!(
             "Unregistering profile {} under {lang_id:04X}",
             braced(profile)
@@ -268,7 +282,70 @@ pub fn unregister_profile(profile: u128) -> io::Result<()> {
             braced(profile)
         )));
     }
+    remove_emptied_languages(&lang_ids)
+}
+
+/// The views of `HKLM\SOFTWARE` that hold `CTF\TIP`: the 64-bit view and
+/// `WOW6432Node`, which 32-bit processes read. On 32-bit Windows both name
+/// the one view, and on Windows 10 x64 both views share `CTF\TIP`.
+const VIEWS: [(u32, &str); 2] = [(KEY_WOW64_64KEY, "64-bit"), (KEY_WOW64_32KEY, "32-bit")];
+
+/// `UnregisterProfile` leaves the key of the profile's LANGID under
+/// `LanguageProfile` behind, without values or subkeys. This deletes the
+/// keys of `lang_ids` that are so empty, then `LanguageProfile` itself if
+/// that left it empty, in both views. A key with any value or subkey stays,
+/// and so do the text service's other keys, such as `Category`, which its
+/// own registration writes. These deletions are the only `CTF\TIP` writes
+/// kbdi makes itself.
+// [spec:kbdgen:req:tsf.register.uninstall+1]
+fn remove_emptied_languages(lang_ids: &[u16]) -> io::Result<()> {
+    let tip = tip_path();
+    for (view, name) in VIEWS {
+        let open = |path: &str| LOCAL_MACHINE.options().read().access(view).open(path);
+        if let Ok(languages) = open(&format!(r"{tip}\LanguageProfile")) {
+            for language in crate::registry_snapshot::keys(&languages)? {
+                if language_key_lang_id(&language).is_some_and(|id| lang_ids.contains(&id)) {
+                    remove_if_empty(&languages, &language, view, name)?;
+                }
+            }
+        }
+        if let Ok(parent) = open(&tip) {
+            remove_if_empty(&parent, "LanguageProfile", view, name)?;
+        }
+    }
     Ok(())
+}
+
+/// Deletes `parent\name` in `view` if it has neither values nor subkeys.
+fn remove_if_empty(
+    parent: &windows_registry::Key,
+    name: &str,
+    view: u32,
+    view_name: &str,
+) -> io::Result<()> {
+    let Ok(key) = parent.options().read().access(view).open(name) else {
+        return Ok(());
+    };
+    if !crate::registry_snapshot::keys(&key)?.is_empty()
+        || !crate::registry_snapshot::values(&key)?.is_empty()
+    {
+        return Ok(());
+    }
+    drop(key);
+    let wide = crate::winrust::to_wide_string(name);
+    // SAFETY: an open key handle and a NUL-terminated name. RegDeleteKeyExW
+    // refuses keys that have subkeys.
+    let status = unsafe { RegDeleteKeyExW(parent.as_raw(), wide.as_ptr(), view, 0) };
+    match status {
+        ERROR_SUCCESS => {
+            log::info!("Deleted the emptied {name} key of the text service ({view_name} view)");
+            Ok(())
+        }
+        // Deleted since it was opened, through the other view or by another
+        // process.
+        ERROR_FILE_NOT_FOUND => Ok(()),
+        status => Err(io::Error::from_raw_os_error(status as i32)),
+    }
 }
 
 #[cfg(test)]
@@ -315,6 +392,16 @@ mod tests {
         assert!(same_input("0409:A0000409", "0x0409:a0000409"));
         assert!(!same_input("0409:A0000409", "0409:A0010409"));
         assert!(!same_input("0409:A0000409", &text));
+    }
+
+    #[test]
+    fn language_keys_name_their_lang_id() {
+        assert_eq!(language_key_lang_id("0x00002400"), Some(0x2400));
+        assert_eq!(language_key_lang_id("0X0000043B"), Some(0x043B));
+        assert_eq!(language_key_lang_id("0c3b"), Some(0x0C3B));
+        for bad in ["", "0x", "0x00012400", "Category", "{5E668C8A}"] {
+            assert_eq!(language_key_lang_id(bad), None, "{bad}");
+        }
     }
 
     #[test]

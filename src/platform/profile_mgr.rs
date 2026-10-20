@@ -1,6 +1,7 @@
 //! `ITfInputProcessorProfileMgr`, the documented TSF API that registers and
 //! unregisters a text service's language profiles. Profiles are written by
-//! TSF itself; kbdi never writes `CTF\TIP` keys.
+//! TSF itself; kbdi only deletes the language keys `UnregisterProfile` leaves
+//! empty (`tsf::unregister_profile`).
 use super::native::hresult;
 use std::{ffi::c_void, io, ptr};
 use windows_sys::{

@@ -160,10 +160,11 @@ This follows kbdgen's `docs/spec/tsf.md`, "Registration"; the code carries
   profile with `ITfInputProcessorProfileMgr::RegisterProfile` under the KLID's
   LANGID when the tag has a Windows locale, with the layout name, the layout DLL
   in the system directory as icon, no substitute layout, enabled by default.
-  kbdi never writes `CTF\TIP` keys itself. A tag without a Windows locale has
-  none even once it is in the user's language list, where `LocaleNameToLCID`
-  gives it a transient LCID (`0x3000` on Windows 10) that no input uses: its
-  KLIDs are named for `2000`, and `keyboard_enable` registers its profile.
+  kbdi registers and unregisters profiles only through TSF. A tag without a
+  Windows locale has none even once it is in the user's language list, where
+  `LocaleNameToLCID` gives it a transient LCID (`0x3000` on Windows 10) that no
+  input uses: its KLIDs are named for `2000`, and `keyboard_enable` registers
+  its profile.
 - `keyboard_enable` registers the profile under the LANGID that the user's
   language list assigns, which for tags without a Windows locale is transient
   and per user, and adds `LLLL:{CLSID}{GUID}` to the user's inputs. It then
@@ -191,10 +192,16 @@ This follows kbdgen's `docs/spec/tsf.md`, "Registration"; the code carries
   it under every LANGID TSF holds it under (unless another KLID still names the
   same product code), removes the layout input and the welcome screen entry,
   under whichever LANGIDs it is there (an older kbdi added it under the
-  KLID's), then the KLID. With the welcome screen entry go the dummy layouts
-  removing it added to `.DEFAULT` and those enabling it added, unless another
-  keyboard kbdi put on the welcome screen under the same LANGID is still there,
-  which then keeps them. Entries
+  KLID's), then the KLID. `UnregisterProfile` leaves the profile's LANGID key
+  under `CTF\TIP\{CLSID}\LanguageProfile` in `HKLM` empty; kbdi deletes the
+  keys of the LANGIDs it unregistered that hold no value or subkey, then
+  `LanguageProfile` if that empties it, in both registry views. These are the
+  only `CTF\TIP` keys kbdi deletes itself; the text service's other keys, such
+  as `Category`, are its installer's. The user's state under `HKCU`'s
+  `CTF\TIP\{CLSID}` goes likewise, up to the `{CLSID}` key. With the welcome
+  screen entry go the dummy layouts removing it added to `.DEFAULT` and those
+  enabling it added, unless another keyboard kbdi put on the welcome screen
+  under the same LANGID is still there, which then keeps them. Entries
   `.DEFAULT` had before, or that changed since, stay, and `Preload` is
   renumbered without gaps. The text service's own uninstaller must run only
   after the last profile under its CLSID is gone: Windows ignores the removal
@@ -222,9 +229,9 @@ Windows had to create `CTF\HiddenDummyLayouts`, and from the logged-on
 session. A layout added to the welcome screen later stayed, in Windows' order.
 The installer's sequence (`keyboard_install -e`, `--default-user`,
 `keyboard_uninstall`) also restored the user's `Keyboard Layout`,
-`Control Panel\International` and `Software\Microsoft\CTF`. TSF leaves the
+`Control Panel\International` and `Software\Microsoft\CTF`. TSF left the
 emptied `LanguageProfile` key of the profile's LANGID under the text service's
-`CTF\TIP` key in `HKLM`.
+`CTF\TIP` key in `HKLM`, which kbdi now deletes.
 
 Validated again on that Windows 10, beside the installed Võro keyboard (KLID
 `a0002000`, its profile under `2400`, on the welcome screen under `2000` from
@@ -235,11 +242,14 @@ second keyboard `2800:A0022000`. Two such keyboards, enabled and uninstalled
 in either order with x64 and x86 kbdi, left `.DEFAULT`'s `Keyboard Layout`,
 `Control Panel\International` and `Software\Microsoft\CTF`, the user's
 `Keyboard Layout`, `Control Panel\International`, `Software\Microsoft\CTF`
-and `Software\Microsoft\Input`, and `HKLM`'s `Keyboard Layouts`
-byte-identical. The Võro keyboard's welcome screen entries and record stayed
-as they were. The layout fallback, without the text service, leaves the
-language's `CTF\SortOrder\AssemblyItem` entry naming the layout's HKL in
-`HKCU`.
+and `Software\Microsoft\Input`, and `HKLM`'s `Keyboard Layouts` and
+`CTF\TIP`, in both views, byte-identical. The first uninstall kept
+`LanguageProfile\0x00002800`, which held the other profile; the second
+deleted it from both views, which share it. The Võro keyboard's `0x00002400`
+key, the text service's `Category` keys and the Võro keyboard's welcome screen
+entries and record stayed as they were. The layout fallback, without the text
+service, leaves the language's `CTF\SortOrder\AssemblyItem` entry naming the
+layout's HKL in `HKCU`.
 
 ## License
 
