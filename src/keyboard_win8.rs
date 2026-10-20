@@ -218,7 +218,7 @@ fn remove_profile_inputs(
 }
 
 /// Removes the profile from the current user's inputs, in every language.
-// [spec:kbdgen:req:tsf.register.uninstall+1]
+// [spec:kbdgen:req:tsf.register.uninstall+2]
 pub fn disable_profile(profile: u128) -> io::Result<()> {
     let selected = selected_profile_inputs(user_input_methods()?, |tip| tip.profile == profile);
     remove_profile_inputs(selected, input::install)?;
@@ -272,7 +272,7 @@ fn names_profile(entry: &RegKey, profile: u128) -> bool {
 /// since Windows numbers its entries. As in `HKLM` (`tsf::unregister_profile`),
 /// the language keys the profile was removed from go once empty, then the
 /// keys above them; in `HKCU` the text service has no keys of its own.
-// [spec:kbdgen:req:tsf.register.uninstall+1]
+// [spec:kbdgen:req:tsf.register.uninstall+2]
 pub fn forget_profile(profile: u128) -> io::Result<()> {
     let tips = r"Software\Microsoft\CTF\TIP";
     let clsid = tsf::braced(tsf::CLSID);

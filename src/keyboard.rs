@@ -115,7 +115,7 @@ pub fn uninstall(product_code: &str) -> Result<(), Error> {
 /// from every language TSF registered it under, before its KLID goes. A
 /// profile still named by another KLID, such as one an older installer
 /// registered under the product code without its closing brace, is kept.
-// [spec:kbdgen:req:tsf.register.uninstall+1]
+// [spec:kbdgen:req:tsf.register.uninstall+2]
 #[cfg(not(feature = "legacy"))]
 fn remove_profile(record: &KeyboardRegKey) -> Result<(), Error> {
     use crate::tsf::parse_guid;
