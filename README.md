@@ -160,7 +160,10 @@ This follows kbdgen's `docs/spec/tsf.md`, "Registration"; the code carries
   profile with `ITfInputProcessorProfileMgr::RegisterProfile` under the KLID's
   LANGID when the tag has a Windows locale, with the layout name, the layout DLL
   in the system directory as icon, no substitute layout, enabled by default.
-  kbdi never writes `CTF\TIP` keys itself.
+  kbdi never writes `CTF\TIP` keys itself. A tag without a Windows locale has
+  none even once it is in the user's language list, where `LocaleNameToLCID`
+  gives it a transient LCID (`0x3000` on Windows 10) that no input uses: its
+  KLIDs are named for `2000`, and `keyboard_enable` registers its profile.
 - `keyboard_enable` registers the profile under the LANGID that the user's
   language list assigns, which for tags without a Windows locale is transient
   and per user, and adds `LLLL:{CLSID}{GUID}` to the user's inputs. It then

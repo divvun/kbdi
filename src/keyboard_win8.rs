@@ -93,15 +93,16 @@ fn register_profile(record: &KeyboardRegKey, lang_id: u16, profile: u128) -> Opt
 
 /// Registers the profile of a newly installed layout whose tag has a
 /// Windows locale, under the LANGID of its KLID. Profiles of tags without
-/// one are registered by `enable`, under the user's transient LANGID.
+/// one are registered by `enable`, under the user's transient LANGID; the
+/// transient LCID `LocaleNameToLCID` gives such a tag in the user's list is
+/// not that LANGID.
 // [spec:kbdgen:req:tsf.register.profile]
 pub fn register_installed_profile(tag: &str, product_code: &str) {
     let Some(record) = KeyboardRegKey::find_by_product_code(product_code) else {
         return;
     };
-    let lcid = match winnls::locale_name_to_lcid(tag) {
-        Ok(lcid) if lcid != 0x1000 => lcid,
-        _ => return,
+    let Some(lcid) = crate::windows_lcid(tag) else {
+        return;
     };
     if let Some(profile) = record
         .product_code()

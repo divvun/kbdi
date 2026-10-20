@@ -30,10 +30,27 @@ mod win7;
 #[cfg(feature = "legacy")]
 pub use self::win7::*;
 
+/// The LCID of `tag`'s Windows locale, if it has one. `LocaleNameToLCID`
+/// gives a tag without one `LOCALE_CUSTOM_UNSPECIFIED` (`0x1000`), or, once
+/// the tag is in the user's language list, a transient LCID (`0x3000` on
+/// Windows 10), which is no locale's own and not the LANGID the user's
+/// input list gives the tag. Both are `LANG_NEUTRAL`, as no locale is.
+pub fn windows_lcid(tag: &str) -> Option<u32> {
+    crate::platform::winnls::locale_name_to_lcid(tag)
+        .ok()
+        .filter(|&lcid| has_language(lcid))
+}
+
+/// Whether `lcid` names a language: its primary language is not
+/// `LANG_NEUTRAL`.
+fn has_language(lcid: u32) -> bool {
+    lcid & 0x3FF != 0
+}
+
+/// The LCID whose low word names the KLIDs of `tag`: its Windows locale's,
+/// or `0x2000` for a tag without one.
 pub fn lcid(tag: &str) -> u32 {
-    crate::platform::winnls::locale_name_to_lcid(&tag)
-        .map(|x| if x == 0x1000 { 0x2000 } else { x })
-        .unwrap_or(0x2000)
+    windows_lcid(tag).unwrap_or(0x2000)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -67,4 +84,20 @@ pub fn setup_logger() -> Result<(), Error> {
         .apply()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn neutral_lcids_name_no_language() {
+        for lcid in [0x0409, 0x0C3B, 0x143B, 0x0001_0407] {
+            assert!(has_language(lcid), "{lcid:x}");
+        }
+        // LOCALE_CUSTOM_UNSPECIFIED, transient LCIDs, LOCALE_USER_DEFAULT.
+        for lcid in [0x1000, 0x2000, 0x2400, 0x3000, 0x0400, 0] {
+            assert!(!has_language(lcid), "{lcid:x}");
+        }
+    }
 }
