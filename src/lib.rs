@@ -30,6 +30,7 @@ mod win7;
 #[cfg(feature = "legacy")]
 pub use self::win7::*;
 
+// [spec:kbdgen:def:tsf.register.ids+1]
 /// The LCID of `tag`'s Windows locale, if it has one. `LocaleNameToLCID`
 /// gives a tag without one `LOCALE_CUSTOM_UNSPECIFIED` (`0x1000`), or, once
 /// the tag is in the user's language list, a transient LCID (`0x3000` on
