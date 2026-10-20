@@ -16,6 +16,8 @@ pub mod text_services;
 #[cfg(not(feature = "legacy"))]
 pub mod tsf;
 mod types;
+#[cfg(not(feature = "legacy"))]
+mod welcome_screen;
 mod winrust;
 
 #[cfg(not(feature = "legacy"))]
