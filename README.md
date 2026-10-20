@@ -112,11 +112,18 @@ outto's current generic run-hook handler only logs nonzero exits as warnings.
 
 The live check uses the private WinRT CoreKeyboardInputProfileManager contract,
 isolated in `platform/core_profiles.rs`. A fresh, read-only child process pumps
-the asynchronous initial snapshot and is limited to eight seconds. Missing APIs,
-invalid data, crashes, and timeouts fail explicitly and do not trigger a restart.
-No debugger attachment, memory offsets, DLL injection, or registry reconstruction
-is involved. The library's `keyboard::enable` saves/verifies preferences; the CLI
-adds live verification (`text_services::refresh` requires the kbdi executable).
+the asynchronous initial snapshot and is limited to eight seconds. Invalid data,
+crashes, and timeouts fail explicitly and do not trigger a restart. A Windows
+without the contract, whose class is missing or which answers `E_NOINTERFACE`
+for one of its interfaces, cannot show the live profiles: Windows 10 19044 has
+the class, but its profiles lack `ICoreKeyboardInputProfile`. There
+`keyboard_enable`, `keyboard_install -e` and `keyboard_refresh` skip the
+verification and succeed, logging why, and restart nothing, since that is no
+evidence of a stale cache; `keyboard_refresh --check` fails, as it cannot
+verify. No debugger attachment, memory offsets, DLL injection, or registry
+reconstruction is involved. The library's `keyboard::enable` saves/verifies
+preferences; the CLI adds live verification (`text_services::refresh` requires
+the kbdi executable).
 
 Validation on Windows 11 (Core TextInput/InputService 10.0.26100.9278): two new
 temporary registrations produced two zero layout IDs; one x64 elevated recovery
@@ -127,6 +134,19 @@ tests cover healthy/delayed/stale batches, check-only operation, unavailable
 probes, and failed recovery. x86 and x64 execute locally; ARM64 is cross-compiled
 with test executables and still requires native runtime validation. Older Windows
 versions and the explicit launch fallback require additional runtime coverage.
+
+Validation on Windows 10 Enterprise LTSC 2021 x64 (19044), with x64 and x86
+kbdi: `keyboard_enable`, elevated as the installer runs it and not elevated as
+the Start Menu shortcut does, exits 0 and logs that verification was skipped;
+`keyboard_refresh --check` exits 1. Without a ctfmon restart, a process that
+ran before `keyboard_enable`, beside the same ctfmon, then had the new input's
+HKL among its layouts and its TSF profile among the language's profiles, and
+activated it: a text service profile, and, with a test build whose text service
+is absent, a layout (HKL `F0CF2800`, not zero). That is how kbdi behaved there
+before the live check existed: `InstallLayoutOrTip` applies the input to the
+running session, and the installer restarts ctfmon at its end anyway. Whether
+Windows 11 builds before 26100 lack the contract too is unverified; on such a
+build kbdi would now skip the check as well.
 
 ## Text service profiles
 
